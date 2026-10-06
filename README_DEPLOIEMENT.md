@@ -129,28 +129,41 @@ les logos. Ouvrez simplement `public/index.html` dans un navigateur après
 avoir adapté les appels `fetch()` si besoin, ou plus simplement servez tout
 le dossier avec Flask directement sur `http://127.0.0.1:5000/`.
 
-## 9. En cas d'erreur « 404 NOT_FOUND » sur la page
+## 9. Note sur `vercel.json` (si vous le modifiez un jour)
 
-Cette erreur signifie que Vercel n'a trouvé aucune règle pour afficher la
-page demandée — généralement un souci de configuration dans `vercel.json`,
-pas un problème avec votre compte ou votre base de données. Si cela se
-produit :
+`vercel.json` ne contient volontairement **aucune règle `rewrites`** pour
+les routes `/api/...`. Vercel détecte automatiquement ce projet comme une
+application Flask (grâce à `requirements.txt` + `api/index.py` qui expose
+un objet `app`) et route déjà `/api/*` vers cette fonction en conservant le
+chemin d'origine. Ajouter une règle `rewrites` manuelle a longtemps semblé
+nécessaire, mais Vercel a changé ce comportement : pour un projet "backend
+framework" comme Flask, une règle `rewrites` fait que Flask reçoit le
+chemin de *destination* de la règle au lieu du chemin réellement demandé —
+ce qui casse toutes les routes internes (`/api/auth/login` devient
+inutilisable, par exemple). Si une future modification de `vercel.json`
+réintroduit des 404 generiques côté Flask ("Not Found / The requested URL
+was not found on the server"), c'est le premier réflexe à vérifier : aucune
+règle `rewrites` ne doit cibler `api/index.py`.
 
-1. Vérifiez que vous utilisez bien la version actuelle de `vercel.json`
-   (config `rewrites` + `outputDirectory`, pas l'ancienne syntaxe
-   `builds`/`routes`).
-2. Dans **Project Settings → General → Build & Development Settings**,
-   assurez-vous que *Framework Preset* est sur **Other** et que
-   *Output Directory* n'est pas forcé manuellement sur une autre valeur
-   (laissez-le vide : `vercel.json` s'en charge).
-3. Repoussez le code (`git add -A && git commit -m "fix vercel.json" && git push`)
-   — Vercel redéploie automatiquement à chaque push.
-4. Dans l'onglet **Deployments** du déploiement concerné, l'onglet
-   **Functions** doit lister `api/index.py` : si elle n'apparaît pas,
-   la fonction Python n'a pas été détectée (vérifiez qu'il n'y a pas
-   d'erreur dans l'onglet **Build Logs**).
+La seule route qui en dépendrait (`/local-blob/<key>`, utilisée pour
+resservir un logo en développement local sans compte Vercel Blob) n'est
+donc disponible qu'en local (`python3 api/index.py`), pas en production —
+sans incidence une fois Vercel Blob relié au projet (étape 5), puisque
+cette route n'est alors jamais utilisée.
 
-## 10. Limites connues de cette version web
+## 10. En cas d'erreur « 404 NOT_FOUND » sur la page (page Vercel, pas Flask)
+
+Si c'est la page d'erreur **de Vercel** (pas celle de Flask) qui s'affiche
+sur la page d'accueil :
+
+1. Dans **Project Settings → General → Build & Development Settings**,
+   vérifiez que *Output Directory* vaut `public` (ou *Automatic*).
+2. Repoussez le code et relancez un déploiement (**Deployments → ⋯ → Redeploy**).
+3. Dans l'onglet **Deployments → [déploiement] → Functions**, `api/index.py`
+   doit être listée : si elle n'apparaît pas, regardez l'onglet **Build
+   Logs** pour une erreur d'installation de dépendances.
+
+## 11. Limites connues de cette version web
 
 - **Pas de génération PDF côté serveur** : la conversion .docx → PDF que
   faisait l'app de bureau s'appuyait sur Word ou LibreOffice installés sur
