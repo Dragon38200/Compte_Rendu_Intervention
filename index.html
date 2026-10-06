@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Rapport Pro — Rapports d'intervention</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ======================= ÉCRAN DE CONNEXION ======================= -->
+<div id="authScreen" class="auth-screen">
+  <div class="auth-card">
+    <div class="auth-logo">⚡ Rapport Pro</div>
+    <p class="auth-subtitle">Rapports d'intervention technicien, générés en ligne.</p>
+
+    <div class="auth-tabs">
+      <button type="button" class="auth-tab active" data-tab="login">Connexion</button>
+      <button type="button" class="auth-tab" data-tab="register">Créer un compte</button>
+    </div>
+
+    <form id="formLogin" class="auth-form">
+      <label>Email</label>
+      <input type="email" id="loginEmail" required autocomplete="username">
+      <label>Mot de passe</label>
+      <input type="password" id="loginPassword" required autocomplete="current-password">
+      <button type="submit" class="btn btn-primary btn-block">Se connecter</button>
+    </form>
+
+    <form id="formRegister" class="auth-form hidden">
+      <label>Email</label>
+      <input type="email" id="registerEmail" required autocomplete="username">
+      <label>Mot de passe (6 caractères minimum)</label>
+      <input type="password" id="registerPassword" required autocomplete="new-password">
+      <button type="submit" class="btn btn-primary btn-block">Créer mon compte</button>
+    </form>
+
+    <div id="authError" class="auth-error hidden"></div>
+  </div>
+</div>
+
+<!-- ======================= APPLICATION ======================= -->
+<div id="appScreen" class="app-screen hidden">
+
+  <header class="topbar">
+    <div class="topbar-brand">⚡ Rapport Pro</div>
+    <div class="topbar-right">
+      <span id="userEmail" class="user-email"></span>
+      <button id="btnLogout" class="btn btn-ghost btn-sm">Déconnexion</button>
+    </div>
+  </header>
+
+  <main class="layout">
+
+    <!-- ---------- Colonne gauche : détails de l'intervention ---------- -->
+    <section class="panel">
+      <h2 class="panel-title">1. Détails de l'intervention</h2>
+
+      <div class="grid-2">
+        <div class="field">
+          <label>N° DOSSIER</label>
+          <input type="text" id="fFolder" placeholder="Ex: INT-2026-089">
+        </div>
+        <div class="field">
+          <label>DATE</label>
+          <input type="text" id="fDate">
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="field">
+          <label>TECHNICIEN</label>
+          <div class="field-with-btn">
+            <input type="text" id="fTechnicien" list="dlTechniciens" placeholder="Nom du technicien">
+            <datalist id="dlTechniciens"></datalist>
+            <button type="button" class="btn-icon" id="btnTechLibrary" title="Bibliothèque de techniciens">📁</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>CLIENT</label>
+          <div class="field-with-btn">
+            <input type="text" id="fClient" list="dlClients" placeholder="Nom du client">
+            <datalist id="dlClients"></datalist>
+            <button type="button" class="btn-icon" id="btnClientLibrary" title="Bibliothèque de clients">📁</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="field">
+          <label>SITE</label>
+          <input type="text" id="fSite" list="dlSites" placeholder="Site d'intervention">
+          <datalist id="dlSites"></datalist>
+        </div>
+        <div class="field">
+          <label>ADRESSE CLIENT</label>
+          <input type="text" id="fAdresse" placeholder="Adresse du client...">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>CONTACT CLIENT</label>
+        <input type="text" id="fContact" placeholder="Nom / téléphone du contact sur site...">
+      </div>
+
+      <div class="grid-2">
+        <div class="field">
+          <label>MATÉRIEL</label>
+          <input type="text" id="fEquipement" placeholder="Ex: Serveur NAS / Pompes A3">
+        </div>
+        <div class="field">
+          <label>N° DE SÉRIE</label>
+          <input type="text" id="fSerie" placeholder="Ex: SN-987654321">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>NOM DU FICHIER</label>
+        <input type="text" id="fFilename">
+      </div>
+
+      <div class="field">
+        <label>OBSERVATIONS &amp; TRAVAUX</label>
+        <textarea id="fObservations" rows="4" placeholder="Résumé des actions effectuées et recommandations..."></textarea>
+        <div class="emoji-bar" data-target="fObservations"></div>
+      </div>
+
+      <h2 class="panel-title">2. Matériel &amp; Prestations</h2>
+      <table class="items-table" id="itemsTable">
+        <thead>
+          <tr><th>Désignation</th><th>Qté</th><th>P.U. HT (€)</th><th></th></tr>
+        </thead>
+        <tbody id="itemsBody"></tbody>
+      </table>
+      <div class="items-actions">
+        <button type="button" class="btn btn-ghost btn-sm" id="btnAddRow">+ Ligne</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="btnDelRow">Supprimer la ligne sélectionnée</button>
+        <span class="items-total">Total HT : <strong id="itemsTotal">0.00 €</strong></span>
+      </div>
+    </section>
+
+    <!-- ---------- Colonne droite : logo, photos, actions ---------- -->
+    <section class="panel">
+      <h2 class="panel-title">3. Logo client</h2>
+      <div class="logo-zone" id="logoZone">
+        <div class="logo-empty" id="logoEmpty">
+          <span>⤓ Logo Client — Glisser / Déposer ou cliquer</span>
+        </div>
+        <div class="logo-filled hidden" id="logoFilled">
+          <img id="logoThumb" alt="Logo client">
+          <span id="logoName" class="logo-name"></span>
+          <button type="button" class="btn btn-ghost btn-sm" id="btnLogoChange">Changer</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="btnLogoRemove">Supprimer</button>
+        </div>
+      </div>
+      <div class="logo-library-row">
+        <select id="logoLibrarySelect"><option value="">— Bibliothèque de logos —</option></select>
+        <button type="button" class="btn btn-ghost btn-sm" id="btnLogoSaveLibrary">+ Ajouter à la bibliothèque</button>
+      </div>
+      <input type="file" id="logoFileInput" accept="image/*" class="hidden">
+
+      <h2 class="panel-title">4. Visuels &amp; Attachements <span id="photoCount" class="muted-count">0 photo</span></h2>
+      <div class="gallery" id="gallery"></div>
+      <div class="gallery-actions">
+        <button type="button" class="btn btn-ghost btn-sm" id="btnAddPhotos">+ Ajouter des photos</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="btnAddText">+ Ajouter un bloc de texte</button>
+      </div>
+      <input type="file" id="photoFileInput" accept="image/*" multiple class="hidden">
+
+      <div class="bottom-bar">
+        <span id="statusLabel" class="status-label status-info">Prêt</span>
+        <div class="bottom-actions">
+          <button type="button" class="btn btn-danger-ghost" id="btnReset">Réinitialiser</button>
+          <button type="button" class="btn btn-ghost" id="btnSignatures">✍ Signatures</button>
+          <button type="button" class="btn btn-accent" id="btnGenerate">📄 Générer le rapport (.docx)</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ======================= MODALES ======================= -->
+
+<div id="modalBackdrop" class="modal-backdrop hidden"></div>
+
+<!-- Bibliothèque clients -->
+<div id="modalClients" class="modal hidden">
+  <div class="modal-header"><h3>Bibliothèque de clients</h3><button class="modal-close" data-close>✕</button></div>
+  <div class="modal-body">
+    <div class="modal-split">
+      <div class="modal-list" id="clientsList"></div>
+      <form id="formClientEdit" class="modal-form">
+        <label>NOM DU CLIENT</label>
+        <input type="text" id="ceNom" required>
+        <label>SITE</label>
+        <input type="text" id="ceSite">
+        <label>ADRESSE</label>
+        <input type="text" id="ceAdresse">
+        <label>CONTACT CLIENT</label>
+        <input type="text" id="ceContact">
+        <div class="modal-form-actions">
+          <button type="button" class="btn btn-ghost btn-sm" id="btnClientNew">Nouveau</button>
+          <button type="submit" class="btn btn-primary btn-sm">Enregistrer</button>
+          <button type="button" class="btn btn-danger-ghost btn-sm" id="btnClientDelete">Supprimer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Bibliothèque techniciens -->
+<div id="modalTechniciens" class="modal hidden">
+  <div class="modal-header"><h3>Bibliothèque de techniciens</h3><button class="modal-close" data-close>✕</button></div>
+  <div class="modal-body">
+    <div class="modal-split">
+      <div class="modal-list" id="techList"></div>
+      <form id="formTechEdit" class="modal-form">
+        <label>NOM</label>
+        <input type="text" id="teNom" required>
+        <div class="modal-form-actions">
+          <button type="button" class="btn btn-ghost btn-sm" id="btnTechNew">Nouveau</button>
+          <button type="submit" class="btn btn-primary btn-sm">Enregistrer</button>
+          <button type="button" class="btn btn-danger-ghost btn-sm" id="btnTechDelete">Supprimer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Signatures -->
+<div id="modalSignatures" class="modal hidden">
+  <div class="modal-header"><h3>Signatures du rapport</h3><button class="modal-close" data-close>✕</button></div>
+  <div class="modal-body">
+    <p class="modal-hint">
+      Saisissez le nom, puis signez dans la zone blanche avec la souris, le doigt (écran tactile) ou un stylet.
+      Si une zone reste vide, un espace sera laissé pour signer à la main sur le rapport imprimé.
+    </p>
+    <div class="sig-blocks" id="sigBlocks"></div>
+    <div class="modal-form-actions">
+      <button type="button" class="btn btn-ghost btn-sm" data-close>Annuler</button>
+      <button type="button" class="btn btn-primary btn-sm" id="btnSigValidate">✓ Valider</button>
+    </div>
+  </div>
+</div>
+
+<!-- Aperçu image plein écran -->
+<div id="modalImagePreview" class="modal modal-image hidden">
+  <div class="modal-header"><h3>Aperçu</h3><button class="modal-close" data-close>✕</button></div>
+  <div class="modal-body modal-image-body">
+    <img id="previewImageFull" alt="Aperçu">
+  </div>
+</div>
+
+<!-- Confirmation générique -->
+<div id="modalConfirm" class="modal modal-confirm hidden">
+  <div class="modal-header"><h3 id="confirmTitle">Confirmer</h3><button class="modal-close" data-close>✕</button></div>
+  <div class="modal-body">
+    <p id="confirmMessage"></p>
+    <div class="modal-form-actions">
+      <button type="button" class="btn btn-ghost btn-sm" data-close>Annuler</button>
+      <button type="button" class="btn btn-danger btn-sm" id="btnConfirmOk">Confirmer</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
