@@ -107,7 +107,28 @@ les logos. Ouvrez simplement `public/index.html` dans un navigateur après
 avoir adapté les appels `fetch()` si besoin, ou plus simplement servez tout
 le dossier avec Flask directement sur `http://127.0.0.1:5000/`.
 
-## 9. Limites connues de cette version web
+## 9. En cas d'erreur « 404 NOT_FOUND » sur la page
+
+Cette erreur signifie que Vercel n'a trouvé aucune règle pour afficher la
+page demandée — généralement un souci de configuration dans `vercel.json`,
+pas un problème avec votre compte ou votre base de données. Si cela se
+produit :
+
+1. Vérifiez que vous utilisez bien la version actuelle de `vercel.json`
+   (config `rewrites` + `outputDirectory`, pas l'ancienne syntaxe
+   `builds`/`routes`).
+2. Dans **Project Settings → General → Build & Development Settings**,
+   assurez-vous que *Framework Preset* est sur **Other** et que
+   *Output Directory* n'est pas forcé manuellement sur une autre valeur
+   (laissez-le vide : `vercel.json` s'en charge).
+3. Repoussez le code (`git add -A && git commit -m "fix vercel.json" && git push`)
+   — Vercel redéploie automatiquement à chaque push.
+4. Dans l'onglet **Deployments** du déploiement concerné, l'onglet
+   **Functions** doit lister `api/index.py` : si elle n'apparaît pas,
+   la fonction Python n'a pas été détectée (vérifiez qu'il n'y a pas
+   d'erreur dans l'onglet **Build Logs**).
+
+## 10. Limites connues de cette version web
 
 - **Pas de génération PDF côté serveur** : la conversion .docx → PDF que
   faisait l'app de bureau s'appuyait sur Word ou LibreOffice installés sur
