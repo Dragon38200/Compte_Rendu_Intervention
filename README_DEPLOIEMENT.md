@@ -10,6 +10,13 @@ GitHub puis déployée sur Vercel.
   Servi tel quel par Vercel comme site statique.
 - **Backend** : `api/index.py` — une API Flask, déployée comme fonction
   serverless Python par Vercel. Toutes les routes `/api/...` y sont gérées.
+  **Ce fichier est volontairement unique et autonome** (base de données,
+  authentification, stockage des logos, génération du .docx et même le
+  modèle Word embarqué en base64 y sont tous regroupés) : le runtime Python
+  de Vercel ne déploie que le fichier de la fonction lui-même et n'embarque
+  pas automatiquement des fichiers ou dossiers voisins (un `api/_lib/`, un
+  `templates/` séparé...). Avoir tout dans un seul fichier élimine ce risque
+  une fois pour toutes — c'est moins élégant à lire, mais fiable.
 - **Base de données** : PostgreSQL (via Vercel Postgres, gratuit en petit
   volume), pour les comptes, clients, sites, techniciens et logos. En
   développement local sans base configurée, l'app bascule automatiquement
@@ -19,8 +26,23 @@ GitHub puis déployée sur Vercel.
   bibliothèque (un espace serverless n'a pas de disque persistant entre deux
   requêtes). Les photos et signatures d'un rapport, elles, ne sont jamais
   stockées : elles transitent seulement le temps de générer le .docx.
-- **Génération du rapport** : logique identique à l'application de bureau
-  (`api/_lib/docx_builder.py`), portée sans dépendance à Qt.
+- **Génération du rapport** : logique identique à l'application de bureau,
+  portée sans dépendance à Qt.
+- **Modèle Word** (`templates/Fond de Page Rapport.docx`) : conservé dans le
+  dépôt pour référence, mais la fonction déployée utilise en réalité une
+  copie encodée en base64 directement dans `api/index.py` (constante
+  `_TEMPLATE_DOCX_B64`), pour la même raison de fiabilité de déploiement.
+  **Si vous changez un jour ce modèle Word**, il faut régénérer cette
+  constante :
+  ```bash
+  python3 -c "
+  import base64
+  with open('templates/Fond de Page Rapport.docx', 'rb') as f:
+      print(base64.b64encode(f.read()).decode())
+  " > /tmp/nouveau_b64.txt
+  ```
+  puis remplacer le contenu de `_TEMPLATE_DOCX_B64 = "..."` dans
+  `api/index.py` par le contenu de ce fichier.
 
 Chaque utilisateur a son propre compte (email + mot de passe) et sa propre
 bibliothèque clients/techniciens/logos, isolée des autres comptes.
