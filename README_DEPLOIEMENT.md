@@ -131,19 +131,32 @@ le dossier avec Flask directement sur `http://127.0.0.1:5000/`.
 
 ## 9. Note sur `vercel.json` (si vous le modifiez un jour)
 
-`vercel.json` ne contient volontairement **aucune règle `rewrites`** pour
-les routes `/api/...`. Vercel détecte automatiquement ce projet comme une
-application Flask (grâce à `requirements.txt` + `api/index.py` qui expose
-un objet `app`) et route déjà `/api/*` vers cette fonction en conservant le
-chemin d'origine. Ajouter une règle `rewrites` manuelle a longtemps semblé
-nécessaire, mais Vercel a changé ce comportement : pour un projet "backend
-framework" comme Flask, une règle `rewrites` fait que Flask reçoit le
-chemin de *destination* de la règle au lieu du chemin réellement demandé —
-ce qui casse toutes les routes internes (`/api/auth/login` devient
-inutilisable, par exemple). Si une future modification de `vercel.json`
-réintroduit des 404 generiques côté Flask ("Not Found / The requested URL
-was not found on the server"), c'est le premier réflexe à vérifier : aucune
-règle `rewrites` ne doit cibler `api/index.py`.
+`vercel.json` contient une règle `rewrites` explicite qui envoie
+uniquement les chemins `/api/...` vers `api/index.py` :
+
+```json
+{
+  "outputDirectory": "public",
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index.py" }
+  ]
+}
+```
+
+Cette règle est nécessaire : sans elle, Vercel traite parfois la fonction
+Python comme gestionnaire par défaut de **toutes** les routes non
+reconnues, y compris `/` — ce qui fait que Flask répond avec son propre
+404 ("Not Found / The requested URL was not found on the server") à la
+place de la page d'accueil statique (`public/index.html`). Avec cette
+règle, seules les requêtes commençant par `/api/` sont envoyées à Flask
+(qui reçoit bien le chemin complet d'origine, ex. `/api/auth/login`, pas
+le chemin de destination de la règle) ; tout le reste (`/`, `/app.js`,
+`/styles.css`, etc.) est servi normalement comme fichier statique depuis
+`public/`.
+
+Si un jour `/api/...` se met à retourner un 404 générique Flask alors que
+la route existe bien dans `api/index.py`, vérifiez que cette règle
+`rewrites` est toujours présente et orthographiée exactement ainsi.
 
 La seule route qui en dépendrait (`/local-blob/<key>`, utilisée pour
 resservir un logo en développement local sans compte Vercel Blob) n'est
