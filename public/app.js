@@ -806,55 +806,61 @@ document.getElementById("btnSigValidate").addEventListener("click", () => {
 });
 
 /* ===================================================================== */
-/*  Génération du rapport                                                */
+/*  Génération du rapport (.docx ou .pdf — même contenu, deux formats)   */
 /* ===================================================================== */
-document.getElementById("btnGenerate").addEventListener("click", async () => {
-  setStatus("Génération du rapport en cours…", "info");
+async function buildGenerateFormData() {
+  const content = [];
+  const photoFiles = [];
+  for (const item of state.gallery) {
+    if (item.type === "photo") {
+      const idx = photoFiles.length;
+      photoFiles.push(item.file);
+      content.push({ type: "photo", photo_index: idx, caption: item.caption, scale: item.scale });
+    } else {
+      if (item.text.trim()) content.push({ type: "text", text: item.text });
+    }
+  }
+
+  const payload = {
+    folder: document.getElementById("fFolder").value.trim(),
+    date: document.getElementById("fDate").value.trim(),
+    technicien: document.getElementById("fTechnicien").value.trim(),
+    client: document.getElementById("fClient").value.trim(),
+    site: document.getElementById("fSite").value.trim(),
+    adresse: document.getElementById("fAdresse").value.trim(),
+    contact: document.getElementById("fContact").value.trim(),
+    equipement: document.getElementById("fEquipement").value.trim(),
+    serie: document.getElementById("fSerie").value.trim(),
+    observations: document.getElementById("fObservations").value.trim(),
+    filename: document.getElementById("fFilename").value.trim() || "rapport",
+    items: getItemsPayload(),
+    content,
+    signatures: {
+      technicien: { nom: state.signatures.technicien.nom || document.getElementById("fTechnicien").value.trim(), image: state.signatures.technicien.dataUrl },
+      client: { nom: state.signatures.client.nom || document.getElementById("fClient").value.trim(), image: state.signatures.client.dataUrl },
+      exterieur: { nom: state.signatures.exterieur.nom, image: state.signatures.exterieur.dataUrl },
+    },
+  };
+
+  const fd = new FormData();
+  fd.append("payload", JSON.stringify(payload));
+  photoFiles.forEach((file, i) => fd.append(`photo_${i}`, file));
+  if (state.logoClient.file) {
+    fd.append("logo", state.logoClient.file);
+  } else if (state.logoClient.url) {
+    const blob = await (await fetch(state.logoClient.url)).blob();
+    fd.append("logo", blob, "logo.png");
+  }
+
+  return { fd, filename: payload.filename };
+}
+
+async function generateReportFile({ endpoint, extension, statusVerb }) {
+  setStatus(`${statusVerb} en cours…`, "info");
   try {
-    const content = [];
-    const photoFiles = [];
-    for (const item of state.gallery) {
-      if (item.type === "photo") {
-        const idx = photoFiles.length;
-        photoFiles.push(item.file);
-        content.push({ type: "photo", photo_index: idx, caption: item.caption, scale: item.scale });
-      } else {
-        if (item.text.trim()) content.push({ type: "text", text: item.text });
-      }
-    }
+    const { fd, filename } = await buildGenerateFormData();
 
-    const payload = {
-      folder: document.getElementById("fFolder").value.trim(),
-      date: document.getElementById("fDate").value.trim(),
-      technicien: document.getElementById("fTechnicien").value.trim(),
-      client: document.getElementById("fClient").value.trim(),
-      site: document.getElementById("fSite").value.trim(),
-      adresse: document.getElementById("fAdresse").value.trim(),
-      contact: document.getElementById("fContact").value.trim(),
-      equipement: document.getElementById("fEquipement").value.trim(),
-      serie: document.getElementById("fSerie").value.trim(),
-      observations: document.getElementById("fObservations").value.trim(),
-      filename: document.getElementById("fFilename").value.trim() || "rapport",
-      items: getItemsPayload(),
-      content,
-      signatures: {
-        technicien: { nom: state.signatures.technicien.nom || document.getElementById("fTechnicien").value.trim(), image: state.signatures.technicien.dataUrl },
-        client: { nom: state.signatures.client.nom || document.getElementById("fClient").value.trim(), image: state.signatures.client.dataUrl },
-        exterieur: { nom: state.signatures.exterieur.nom, image: state.signatures.exterieur.dataUrl },
-      },
-    };
-
-    const fd = new FormData();
-    fd.append("payload", JSON.stringify(payload));
-    photoFiles.forEach((file, i) => fd.append(`photo_${i}`, file));
-    if (state.logoClient.file) {
-      fd.append("logo", state.logoClient.file);
-    } else if (state.logoClient.url) {
-      const blob = await (await fetch(state.logoClient.url)).blob();
-      fd.append("logo", blob, "logo.png");
-    }
-
-    const resp = await fetch("/api/generate", { method: "POST", credentials: "same-origin", body: fd });
+    const resp = await fetch(endpoint, { method: "POST", credentials: "same-origin", body: fd });
     if (!resp.ok) {
       let msg = `Erreur serveur (${resp.status})`;
       try { const j = await resp.json(); msg = j.error || msg; } catch (_) {}
@@ -864,16 +870,23 @@ document.getElementById("btnGenerate").addEventListener("click", async () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = payload.filename.toLowerCase().endsWith(".docx") ? payload.filename : `${payload.filename}.docx`;
+    a.download = filename.toLowerCase().endsWith(`.${extension}`) ? filename : `${filename}.${extension}`;
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
 
-    setStatus("Rapport généré avec succès", "success");
+    setStatus(`Rapport ${extension.toUpperCase()} généré avec succès`, "success");
   } catch (err) {
     setStatus(`Échec : ${err.message}`, "error");
   }
+}
+
+document.getElementById("btnGenerate").addEventListener("click", () => {
+  generateReportFile({ endpoint: "/api/generate", extension: "docx", statusVerb: "Génération du rapport Word" });
+});
+document.getElementById("btnGeneratePdf").addEventListener("click", () => {
+  generateReportFile({ endpoint: "/api/generate-pdf", extension: "pdf", statusVerb: "Génération du rapport PDF" });
 });
 
 /* ===================================================================== */

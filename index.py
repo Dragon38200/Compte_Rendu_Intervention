@@ -636,6 +636,283 @@ def build_report_docx(payload, photos, logo_bytes=None):
                     pass
 
 
+def build_report_pdf(payload, photos, logo_bytes=None):
+    """
+    Construit le rapport au format PDF, directement (sans passer par le
+    modèle Word ni par une conversion externe), avec reportlab — une
+    bibliothèque pure Python, sans dépendance système, donc compatible
+    avec l'hébergement serverless de Vercel.
+
+    Reprend les mêmes sections et les mêmes données que build_report_docx
+    ci-dessus, mais avec sa propre mise en page (reportlab ne sait pas
+    réutiliser le modèle Word `Fond de Page Rapport.docx` : le rendu est
+    donc proche, mais pas pixel pour pixel identique au .docx).
+    """
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import cm
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import (
+        BaseDocTemplate, PageTemplate, Frame, Table, TableStyle,
+        Paragraph, Spacer, Image as RLImage,
+    )
+    from reportlab.pdfgen.canvas import Canvas
+
+    footer_title_parts = [
+        (payload.get("client") or "").strip(),
+        (payload.get("equipement") or "").strip(),
+    ]
+    footer_title = " - ".join(part for part in footer_title_parts if part) or "Rapport d'intervention"
+
+    PAGE_W, PAGE_H = A4
+    MARGIN = 2 * cm
+    BOTTOM_MARGIN = 2 * cm
+    USABLE_W = PAGE_W - 2 * MARGIN
+
+    styles = getSampleStyleSheet()
+    style_h1 = ParagraphStyle(
+        "RPTitle", parent=styles["Heading1"], alignment=TA_CENTER, fontSize=18, spaceAfter=14,
+    )
+    style_h2 = ParagraphStyle(
+        "RPHeading", parent=styles["Heading2"], fontSize=12,
+        textColor=colors.HexColor("#1D4ED8"), spaceBefore=12, spaceAfter=6,
+    )
+    style_body = ParagraphStyle("RPBody", parent=styles["Normal"], fontSize=10, leading=14)
+    style_caption = ParagraphStyle(
+        "RPCaption", parent=styles["Normal"], fontName="Helvetica-Oblique",
+        fontSize=8, leading=10, alignment=TA_CENTER,
+    )
+    style_sig_label = ParagraphStyle(
+        "RPSigLabel", parent=styles["Normal"], fontSize=9, alignment=TA_CENTER, leading=13,
+    )
+
+    class NumberedCanvas(Canvas):
+        """Canvas à deux passes : permet d'afficher « Page X / Y » en pied
+        de page, Y (le nombre total de pages) n'étant connu qu'une fois le
+        document entièrement généré."""
+        def __init__(self, *args, **kwargs):
+            Canvas.__init__(self, *args, **kwargs)
+            self._saved_page_states = []
+
+        def showPage(self):
+            self._saved_page_states.append(dict(self.__dict__))
+            self._startPage()
+
+        def save(self):
+            total_pages = len(self._saved_page_states)
+            for state in self._saved_page_states:
+                self.__dict__.update(state)
+                self._draw_footer(total_pages)
+                Canvas.showPage(self)
+            Canvas.save(self)
+
+        def _draw_footer(self, total_pages):
+            self.saveState()
+            self.setStrokeColor(colors.HexColor("#CBD5E1"))
+            self.line(MARGIN, 1.5 * cm, PAGE_W - MARGIN, 1.5 * cm)
+            self.setFont("Helvetica", 8)
+            self.setFillColor(colors.HexColor("#64748B"))
+            self.drawString(MARGIN, 1.1 * cm, footer_title)
+            self.drawRightString(PAGE_W - MARGIN, 1.1 * cm, f"Page {self._pageNumber} / {total_pages}")
+            self.restoreState()
+
+    def scaled_image(raw_bytes, max_w, max_h):
+        with Image.open(io.BytesIO(raw_bytes)) as im:
+            im = ImageOps.exif_transpose(im)
+            w, h = im.size
+        ratio = min(max_w / w, max_h / h, 1.0) if w and h else 1.0
+        return RLImage(io.BytesIO(raw_bytes), width=w * ratio, height=h * ratio)
+
+    buf = io.BytesIO()
+    doc = BaseDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=MARGIN, rightMargin=MARGIN, topMargin=MARGIN, bottomMargin=BOTTOM_MARGIN,
+    )
+    frame = Frame(MARGIN, BOTTOM_MARGIN, USABLE_W, PAGE_H - MARGIN - BOTTOM_MARGIN, id="main")
+    doc.addPageTemplates([PageTemplate(id="report", frames=[frame])])
+
+    story = []
+
+    if logo_bytes:
+        try:
+            img = scaled_image(logo_bytes, 4 * cm, 2.2 * cm)
+            img.hAlign = "RIGHT"
+            story.append(img)
+            story.append(Spacer(1, 6))
+        except Exception:
+            pass
+
+    story.append(Paragraph("RAPPORT D'INTERVENTION", style_h1))
+
+    meta = [
+        ("N° Dossier :", payload.get("folder", "")),
+        ("Date :", payload.get("date", "")),
+        ("Technicien :", payload.get("technicien", "")),
+        ("Client :", payload.get("client", "")),
+        ("Site :", payload.get("site", "")),
+        ("Adresse Client :", payload.get("adresse", "")),
+        ("Contact Client :", payload.get("contact", "")),
+        ("Matériel :", payload.get("equipement", "")),
+        ("N° de Série :", payload.get("serie", "")),
+    ]
+    meta_data = [
+        [Paragraph(f"<b>{k}</b>", style_body), Paragraph(v or "N/C", style_body)]
+        for k, v in meta
+    ]
+    meta_table = Table(meta_data, colWidths=[4.5 * cm, USABLE_W - 4.5 * cm])
+    meta_table.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F1F5F9")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.append(meta_table)
+    story.append(Spacer(1, 6))
+
+    story.append(Paragraph("Observations &amp; Travaux", style_h2))
+    story.append(Paragraph(
+        (payload.get("observations") or "").strip() or "Aucune observation particulière.",
+        style_body,
+    ))
+
+    items = payload.get("items") or []
+    if items:
+        story.append(Paragraph("Matériel &amp; Prestations", style_h2))
+        qte_w, pu_w, total_w = 1.6 * cm, 2.6 * cm, 2.6 * cm
+        desig_w = USABLE_W - (qte_w + pu_w + total_w)
+
+        data = [["Désignation", "Qté", "P.U. HT", "Total HT"]]
+        total_general_ht = 0.0
+        for item in items:
+            desig = str(item.get("designation", ""))
+            try:
+                qte = float(item.get("qte", 0) or 0)
+            except (TypeError, ValueError):
+                qte = 0.0
+            try:
+                pu = float(item.get("pu", 0) or 0)
+            except (TypeError, ValueError):
+                pu = 0.0
+            row_total = qte * pu
+            total_general_ht += row_total
+            data.append([desig, f"{qte:g}", f"{pu:.2f} €", f"{row_total:.2f} €"])
+        total_row_idx = len(data)
+        data.append(["TOTAL GENERAL HT", "", "", f"{total_general_ht:.2f} €"])
+
+        item_table = Table(data, colWidths=[desig_w, qte_w, pu_w, total_w], repeatRows=1)
+        item_table.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1D4ED8")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+            ("ALIGN", (0, 0), (0, -1), "LEFT"),
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+            ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("SPAN", (0, total_row_idx), (2, total_row_idx)),
+            ("FONTNAME", (0, total_row_idx), (-1, total_row_idx), "Helvetica-Bold"),
+            ("BACKGROUND", (0, total_row_idx), (-1, total_row_idx), colors.HexColor("#EFF6FF")),
+        ]))
+        story.append(item_table)
+        story.append(Spacer(1, 6))
+
+    content = payload.get("content") or []
+    if content:
+        story.append(Paragraph("Photos &amp; remarques complémentaires", style_h2))
+        pending_pair = []
+        gap = 0.4 * cm
+        cell_w = (USABLE_W - gap) / 2
+
+        def flush_pair():
+            if not pending_pair:
+                return
+            row_cells = []
+            for item in pending_pair:
+                try:
+                    img = scaled_image(item["raw"], cell_w - 0.4 * cm, 7 * cm)
+                    img.hAlign = "CENTER"
+                except Exception:
+                    continue
+                cell_content = [img]
+                if item["caption"]:
+                    cell_content.append(Spacer(1, 3))
+                    cell_content.append(Paragraph(f"Figure : {item['caption']}", style_caption))
+                row_cells.append(cell_content)
+            while len(row_cells) < 2:
+                row_cells.append([Paragraph("", style_caption)])
+            t = Table([row_cells], colWidths=[cell_w, cell_w])
+            t.setStyle(TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+            ]))
+            story.append(t)
+            pending_pair.clear()
+
+        for entry in content:
+            if entry.get("type") == "photo":
+                idx = entry.get("photo_index")
+                if idx is None or idx < 0 or idx >= len(photos):
+                    continue
+                pending_pair.append({
+                    "raw": photos[idx],
+                    "caption": (entry.get("caption") or "").strip(),
+                })
+                if len(pending_pair) == 2:
+                    flush_pair()
+            elif entry.get("type") == "text":
+                flush_pair()
+                text = (entry.get("text") or "").strip()
+                if text:
+                    story.append(Paragraph(text, style_body))
+                    story.append(Spacer(1, 6))
+        flush_pair()
+
+    sig_payload = payload.get("signatures") or {}
+    sig_technicien = (sig_payload.get("technicien") or {}).get("nom") or payload.get("technicien", "")
+    sig_client = (sig_payload.get("client") or {}).get("nom") or payload.get("client", "")
+    sig_exterieur = (sig_payload.get("exterieur") or {}).get("nom") or ""
+
+    story.append(Spacer(1, 4))
+    story.append(Paragraph("Signatures", style_h2))
+
+    columns = [
+        ("Technicien", sig_technicien, (sig_payload.get("technicien") or {}).get("image")),
+        ("Client", sig_client, (sig_payload.get("client") or {}).get("image")),
+        ("Intervenant extérieur", sig_exterieur, (sig_payload.get("exterieur") or {}).get("image")),
+    ]
+    sig_col_w = USABLE_W / 3
+    header_row, img_row = [], []
+    for label, name, img_data in columns:
+        header_row.append(Paragraph(f"<b>{label}</b><br/>{name or '—'}", style_sig_label))
+        img_bytes = _decode_data_url_or_b64(img_data)
+        if img_bytes:
+            try:
+                img = scaled_image(img_bytes, sig_col_w - 0.6 * cm, 2.3 * cm)
+                img.hAlign = "CENTER"
+                img_row.append(img)
+                continue
+            except Exception:
+                pass
+        img_row.append(Paragraph("", style_sig_label))
+
+    sig_table = Table([header_row, img_row], colWidths=[sig_col_w] * 3, rowHeights=[None, 2.6 * cm])
+    sig_table.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    story.append(sig_table)
+
+    doc.build(story, canvasmaker=NumberedCanvas)
+    return buf.getvalue()
+
+
 # ======================================================================
 #  Routes Flask
 # ======================================================================
@@ -923,6 +1200,45 @@ def generate_report():
     return Response(
         docx_bytes,
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/api/generate-pdf")
+@login_required
+def generate_report_pdf():
+    raw_payload = request.form.get("payload")
+    if not raw_payload:
+        return jsonify({"error": "payload manquant"}), 400
+    try:
+        payload = json.loads(raw_payload)
+    except ValueError:
+        return jsonify({"error": "payload JSON invalide"}), 400
+
+    photos = []
+    i = 0
+    while True:
+        f = request.files.get(f"photo_{i}")
+        if f is None:
+            break
+        photos.append(f.read())
+        i += 1
+
+    logo_file = request.files.get("logo")
+    logo_bytes = logo_file.read() if logo_file else None
+
+    try:
+        pdf_bytes = build_report_pdf(payload, photos, logo_bytes=logo_bytes)
+    except Exception as e:
+        return jsonify({"error": f"Échec de la génération du PDF : {e}"}), 500
+
+    filename = (payload.get("filename") or "rapport").strip() or "rapport"
+    if not filename.lower().endswith(".pdf"):
+        filename += ".pdf"
+
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
