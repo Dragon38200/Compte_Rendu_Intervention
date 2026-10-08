@@ -46,18 +46,10 @@
 
   <div class="auth-card">
     <div class="auth-logo">
-      <svg class="brand-icon" width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <defs>
-          <linearGradient id="brandGrad1" x1="4" y1="1" x2="16" y2="23" gradientUnits="userSpaceOnUse">
-            <stop stop-color="#BAE6FD"/>
-            <stop offset="1" stop-color="#2563EB"/>
-          </linearGradient>
-        </defs>
-        <path d="M13 1 L4 14 H10 L8 23 L20 9 H13 L15 1 Z" fill="url(#brandGrad1)"/>
-      </svg>
-      <span>Rapport Pro</span>
+      <img class="brand-icon" src="assets/logo-mounier.png" alt="Mounier SAS">
+      <span>Logiciel de compte rendus d'interventions Mounier SAS</span>
     </div>
-    <p class="auth-subtitle">Rapports d'intervention technicien, générés en ligne.</p>
+    <p class="auth-subtitle">Compte rendu des Interventions à remplir par l'intervenant</p>
 
     <div class="auth-tabs">
       <button type="button" class="auth-tab active" data-tab="login">Connexion</button>
@@ -88,17 +80,9 @@
 <div id="appScreen" class="app-screen hidden">
 
   <header class="topbar">
-    <div class="topbar-brand">
-      <svg class="brand-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <defs>
-          <linearGradient id="brandGrad2" x1="4" y1="1" x2="16" y2="23" gradientUnits="userSpaceOnUse">
-            <stop stop-color="#BAE6FD"/>
-            <stop offset="1" stop-color="#2563EB"/>
-          </linearGradient>
-        </defs>
-        <path d="M13 1 L4 14 H10 L8 23 L20 9 H13 L15 1 Z" fill="url(#brandGrad2)"/>
-      </svg>
-      <span>Rapport Pro</span>
+    <div class="topbar-brand" title="Logiciel de compte rendus d'interventions Mounier SAS">
+      <img class="brand-icon" src="assets/logo-mounier.png" alt="Mounier SAS">
+      <span>Logiciel de compte rendus d'interventions Mounier SAS</span>
     </div>
     <div class="topbar-right">
       <span id="userEmail" class="user-email"></span>
@@ -261,6 +245,7 @@
           <button type="button" class="btn btn-ghost btn-sm" id="btnClientNew">Nouveau</button>
           <button type="submit" class="btn btn-primary btn-sm">Enregistrer</button>
           <button type="button" class="btn btn-danger-ghost btn-sm" id="btnClientDelete">Supprimer</button>
+          <button type="button" class="btn btn-accent btn-sm" id="btnClientUse">Utiliser ce client</button>
         </div>
       </form>
     </div>

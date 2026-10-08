@@ -301,6 +301,7 @@ function renderClientsList() {
         document.getElementById("ceAdresse").value = s.adresse || "";
         document.getElementById("ceContact").value = s.contact || "";
       });
+      row.addEventListener("dblclick", () => applyClientToForm(c, s));
       list.appendChild(row);
     });
   });
@@ -318,6 +319,36 @@ function clientFormNew() {
   document.getElementById("ceNom").focus();
 }
 document.getElementById("btnClientNew").addEventListener("click", clientFormNew);
+
+/* Charge un client (+ site) de la bibliothèque dans le formulaire principal
+   du rapport — c'est ce qui manquait : la bibliothèque ne faisait jusque-là
+   que gérer les fiches (créer/modifier/supprimer), sans jamais les
+   réinjecter dans le rapport en cours. */
+function applyClientToForm(client, site) {
+  document.getElementById("fClient").value = client.nom || "";
+  document.getElementById("fSite").value = site?.site || "";
+  document.getElementById("fAdresse").value = site?.adresse || "";
+  document.getElementById("fContact").value = site?.contact || "";
+  onClientFieldChanged();
+  closeAllModals();
+  setStatus(`Client « ${client.nom} » chargé dans le rapport`, "success");
+}
+document.getElementById("btnClientUse").addEventListener("click", () => {
+  const nom = document.getElementById("ceNom").value.trim();
+  if (!nom) {
+    alert("Sélectionne d'abord un client dans la liste à gauche.");
+    return;
+  }
+  const client = state.editingClientId
+    ? state.clients.find(c => c.id === state.editingClientId)
+    : { nom };
+  const site = {
+    site: document.getElementById("ceSite").value.trim(),
+    adresse: document.getElementById("ceAdresse").value.trim(),
+    contact: document.getElementById("ceContact").value.trim(),
+  };
+  applyClientToForm(client, site);
+});
 
 document.getElementById("formClientEdit").addEventListener("submit", async (e) => {
   e.preventDefault();

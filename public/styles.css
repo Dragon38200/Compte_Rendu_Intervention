@@ -179,10 +179,13 @@ label {
   padding: 28px 26px;
 }
 .auth-logo {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 22px; font-weight: 800; color: #93C5FD; margin-bottom: 4px;
+  display: flex; align-items: center; gap: 10px;
+  font-size: 16px; line-height: 1.3; font-weight: 800; color: #93C5FD; margin-bottom: 4px;
 }
-.brand-icon { flex: none; filter: drop-shadow(0 0 6px rgba(56,189,248,0.55)); }
+.brand-icon {
+  flex: none; width: 34px; height: 34px; object-fit: cover;
+  border-radius: 8px; filter: drop-shadow(0 0 6px rgba(56,189,248,0.4));
+}
 .auth-subtitle { color: var(--text-muted); font-size: 12px; margin: 0 0 18px; }
 .auth-tabs { display: flex; gap: 6px; margin-bottom: 18px; background: rgba(15,23,42,0.6); border-radius: 9px; padding: 4px; }
 .auth-tab {
@@ -203,8 +206,15 @@ label {
   padding: 12px 20px; border-bottom: 1px solid var(--border-soft);
   background: rgba(13, 20, 36, 0.8); position: sticky; top: 0; z-index: 20;
 }
-.topbar-brand { display: flex; align-items: center; gap: 7px; font-weight: 800; color: #93C5FD; font-size: 16px; }
-.topbar-right { display: flex; align-items: center; gap: 12px; }
+.topbar-brand {
+  display: flex; align-items: center; gap: 9px; font-weight: 800; color: #93C5FD;
+  font-size: 13px; min-width: 0; flex: 1 1 auto; margin-right: 12px;
+}
+.topbar-brand span {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+.topbar-brand .brand-icon { width: 26px; height: 26px; border-radius: 6px; }
+.topbar-right { display: flex; align-items: center; gap: 12px; flex: none; }
 .user-email { color: var(--text-muted); font-size: 12px; }
 
 .layout {
