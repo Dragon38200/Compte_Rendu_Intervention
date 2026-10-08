@@ -474,9 +474,53 @@ async function loadLogos() {
   });
 }
 
-function setLogoClientFromFile(file) {
-  state.logoClient = { file, url: null, name: file.name };
-  showLogoFilled(URL.createObjectURL(file), file.name);
+/* ---------------------------------------------------------------------
+   Compression des images côté navigateur avant envoi au serveur.
+   Nécessaire car Vercel plafonne une requête de fonction serverless à
+   4,5 Mo (limite fixe de la plateforme, non configurable) : une photo de
+   téléphone (souvent 3 à 8 Mo) la dépasse à elle seule, d'où l'erreur
+   "413" dès que plusieurs photos sont jointes à un rapport. On redimen-
+   sionne et recompresse donc chaque image avant de l'ajouter à l'état,
+   sans perte visible pour un rapport (1600px de large suffit largement).
+   --------------------------------------------------------------------- */
+function compressImageFile(file, { maxDim = 1600, quality = 0.82 } = {}) {
+  return new Promise((resolve) => {
+    // On ne retouche pas ce qui est déjà léger (ex: logo déjà petit) ou
+    // les formats qu'un <canvas> ne saurait pas réencoder proprement.
+    if (!file.type.startsWith("image/") || file.type === "image/svg+xml" || file.size < 300 * 1024) {
+      resolve(file);
+      return;
+    }
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      const ratio = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * ratio));
+      const h = Math.max(1, Math.round(img.height * ratio));
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(objectUrl);
+      canvas.toBlob((blob) => {
+        if (!blob || blob.size >= file.size) {
+          resolve(file); // la compression n'a rien gagné : on garde l'original
+          return;
+        }
+        const newName = file.name.replace(/\.[^.]+$/, "") + ".jpg";
+        resolve(new File([blob], newName, { type: "image/jpeg", lastModified: Date.now() }));
+      }, "image/jpeg", quality);
+    };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); resolve(file); };
+    img.src = objectUrl;
+  });
+}
+
+async function setLogoClientFromFile(file) {
+  const compressed = await compressImageFile(file, { maxDim: 1000, quality: 0.85 });
+  state.logoClient = { file: compressed, url: null, name: compressed.name };
+  showLogoFilled(URL.createObjectURL(compressed), compressed.name);
 }
 function setLogoClientFromLibrary(logo) {
   state.logoClient = { file: null, url: logo.url, name: logo.nom };
@@ -502,14 +546,14 @@ logoZone.addEventListener("click", (e) => {
 });
 logoZone.addEventListener("dragover", (e) => { e.preventDefault(); logoZone.style.borderColor = "#38BDF8"; });
 logoZone.addEventListener("dragleave", () => { logoZone.style.borderColor = ""; });
-logoZone.addEventListener("drop", (e) => {
+logoZone.addEventListener("drop", async (e) => {
   e.preventDefault();
   logoZone.style.borderColor = "";
   const file = e.dataTransfer.files[0];
-  if (file) setLogoClientFromFile(file);
+  if (file) await setLogoClientFromFile(file);
 });
-logoFileInput.addEventListener("change", () => {
-  if (logoFileInput.files[0]) setLogoClientFromFile(logoFileInput.files[0]);
+logoFileInput.addEventListener("change", async () => {
+  if (logoFileInput.files[0]) await setLogoClientFromFile(logoFileInput.files[0]);
   logoFileInput.value = "";
 });
 document.getElementById("btnLogoChange").addEventListener("click", (e) => { e.stopPropagation(); logoFileInput.click(); });
@@ -555,24 +599,28 @@ const gallery = document.getElementById("gallery");
 const photoFileInput = document.getElementById("photoFileInput");
 const photoZone = document.getElementById("photoZone");
 
-function addPhotoFiles(fileList) {
+async function addPhotoFiles(fileList) {
   const files = Array.from(fileList).filter(f => f.type.startsWith("image/"));
-  files.forEach(file => {
+  if (!files.length) return;
+  setStatus(`Compression de ${files.length > 1 ? `${files.length} photos` : "la photo"}…`, "info");
+  const compressed = await Promise.all(files.map(f => compressImageFile(f)));
+  compressed.forEach(file => {
     state.gallery.push({ type: "photo", file, previewUrl: URL.createObjectURL(file), caption: file.name.replace(/\.[^.]+$/, ""), scale: 1.0 });
   });
-  if (files.length) renderGallery();
+  renderGallery();
+  setStatus("Prêt", "info");
 }
 
 photoZone.addEventListener("click", () => photoFileInput.click());
 photoZone.addEventListener("dragover", (e) => { e.preventDefault(); photoZone.classList.add("dragover"); });
 photoZone.addEventListener("dragleave", () => photoZone.classList.remove("dragover"));
-photoZone.addEventListener("drop", (e) => {
+photoZone.addEventListener("drop", async (e) => {
   e.preventDefault();
   photoZone.classList.remove("dragover");
-  addPhotoFiles(e.dataTransfer.files);
+  await addPhotoFiles(e.dataTransfer.files);
 });
-photoFileInput.addEventListener("change", () => {
-  addPhotoFiles(photoFileInput.files);
+photoFileInput.addEventListener("change", async () => {
+  await addPhotoFiles(photoFileInput.files);
   photoFileInput.value = "";
 });
 document.getElementById("btnAddText").addEventListener("click", () => {
@@ -883,18 +931,38 @@ async function buildGenerateFormData() {
     fd.append("logo", blob, "logo.png");
   }
 
-  return { fd, filename: payload.filename };
+  // Estimation de la taille totale envoyée (photos + logo + signatures en
+  // base64 dans le payload JSON) : Vercel plafonne une requête de fonction
+  // serverless à 4,5 Mo, limite fixe de la plateforme. On prévient donc
+  // clairement plutôt que de laisser échouer avec un 413 cryptique.
+  let estimatedBytes = JSON.stringify(payload).length;
+  for (const file of photoFiles) estimatedBytes += file.size;
+  if (state.logoClient.file) estimatedBytes += state.logoClient.file.size;
+
+  return { fd, filename: payload.filename, estimatedBytes };
 }
 
 async function generateReportFile({ endpoint, extension, statusVerb }) {
   setStatus(`${statusVerb} en cours…`, "info");
   try {
-    const { fd, filename } = await buildGenerateFormData();
+    const { fd, filename, estimatedBytes } = await buildGenerateFormData();
+
+    const MAX_BYTES = 4.3 * 1024 * 1024; // marge sous la limite Vercel (4,5 Mo)
+    if (estimatedBytes > MAX_BYTES) {
+      throw new Error(
+        `Le rapport est trop volumineux pour être envoyé (≈${(estimatedBytes / 1024 / 1024).toFixed(1)} Mo, `
+        + `limite 4,5 Mo). Retirez quelques photos ou générez le rapport en plusieurs fois.`
+      );
+    }
 
     const resp = await fetch(endpoint, { method: "POST", credentials: "same-origin", body: fd });
     if (!resp.ok) {
       let msg = `Erreur serveur (${resp.status})`;
-      try { const j = await resp.json(); msg = j.error || msg; } catch (_) {}
+      if (resp.status === 413) {
+        msg = "Le rapport est trop volumineux pour être envoyé (limite 4,5 Mo). Retirez quelques photos ou générez le rapport en plusieurs fois.";
+      } else {
+        try { const j = await resp.json(); msg = j.error || msg; } catch (_) {}
+      }
       throw new Error(msg);
     }
     const blob = await resp.blob();
