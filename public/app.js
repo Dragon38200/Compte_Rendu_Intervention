@@ -522,14 +522,27 @@ document.getElementById("btnLogoSaveLibrary").addEventListener("click", async ()
 /* ===================================================================== */
 const gallery = document.getElementById("gallery");
 const photoFileInput = document.getElementById("photoFileInput");
+const photoZone = document.getElementById("photoZone");
 
-document.getElementById("btnAddPhotos").addEventListener("click", () => photoFileInput.click());
-photoFileInput.addEventListener("change", () => {
-  Array.from(photoFileInput.files).forEach(file => {
+function addPhotoFiles(fileList) {
+  const files = Array.from(fileList).filter(f => f.type.startsWith("image/"));
+  files.forEach(file => {
     state.gallery.push({ type: "photo", file, previewUrl: URL.createObjectURL(file), caption: file.name.replace(/\.[^.]+$/, ""), scale: 1.0 });
   });
+  if (files.length) renderGallery();
+}
+
+photoZone.addEventListener("click", () => photoFileInput.click());
+photoZone.addEventListener("dragover", (e) => { e.preventDefault(); photoZone.classList.add("dragover"); });
+photoZone.addEventListener("dragleave", () => photoZone.classList.remove("dragover"));
+photoZone.addEventListener("drop", (e) => {
+  e.preventDefault();
+  photoZone.classList.remove("dragover");
+  addPhotoFiles(e.dataTransfer.files);
+});
+photoFileInput.addEventListener("change", () => {
+  addPhotoFiles(photoFileInput.files);
   photoFileInput.value = "";
-  renderGallery();
 });
 document.getElementById("btnAddText").addEventListener("click", () => {
   state.gallery.push({ type: "text", text: "" });
