@@ -87,6 +87,8 @@ label {
 
 /* ---------------- Écran de connexion ---------------- */
 .auth-screen {
+  position: relative;
+  overflow: hidden;
   min-height: 100vh;
   display: flex;
   align-items: center;
@@ -94,7 +96,81 @@ label {
   padding: 20px;
   background: radial-gradient(circle at 20% 20%, #15213b 0%, #0B0F19 60%);
 }
+
+/* Orage de fond : éclairs animés + flashs de lueur ambiante.
+   Purement décoratif (aria-hidden), ne capte jamais le clic. */
+.lightning-layer, .sky-flash {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+.bolt { opacity: 0; }
+.bolt-core, .bolt-branch {
+  fill: none;
+  stroke: url(#boltColor);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.bolt-core { stroke-width: 2.6; filter: drop-shadow(0 0 6px rgba(224,242,254,0.95)) drop-shadow(0 0 18px rgba(56,189,248,0.75)); }
+.bolt-branch { stroke-width: 1.4; opacity: 0.75; filter: drop-shadow(0 0 5px rgba(186,230,253,0.8)); }
+.bolt-glow {
+  fill: none;
+  stroke: #7DD3FC;
+  stroke-width: 13;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: blur(7px);
+  opacity: 0.45;
+}
+
+/* Chaque éclair scintille brièvement puis s'éteint, sur un cycle long
+   (silence orageux) ; les délais décalés évitent un effet trop régulier. */
+.bolt-1 { animation: boltFlash 8s infinite; }
+.bolt-2 { animation: boltFlash 11s infinite; animation-delay: 3.1s; }
+.bolt-3 { animation: boltFlash 9.5s infinite; animation-delay: 6.4s; }
+
+@keyframes boltFlash {
+  0%, 90% { opacity: 0; }
+  90.4% { opacity: 1; }
+  90.8% { opacity: 0.15; }
+  91.3% { opacity: 1; }
+  91.9% { opacity: 0.05; }
+  92.6% { opacity: 0.9; }
+  94% { opacity: 0; }
+  100% { opacity: 0; }
+}
+
+.sky-flash-1 {
+  background: radial-gradient(circle at 18% 10%, rgba(224,242,254,0.30), transparent 55%);
+  animation: skyFlash 8s infinite;
+}
+.sky-flash-2 {
+  background: radial-gradient(circle at 85% 15%, rgba(224,242,254,0.24), transparent 55%);
+  animation: skyFlash 11s infinite; animation-delay: 3.1s;
+}
+.sky-flash-3 {
+  background: radial-gradient(circle at 50% 5%, rgba(224,242,254,0.22), transparent 60%);
+  animation: skyFlash 9.5s infinite; animation-delay: 6.4s;
+}
+@keyframes skyFlash {
+  0%, 90% { opacity: 0; }
+  90.4% { opacity: 0.9; }
+  90.8% { opacity: 0.1; }
+  91.3% { opacity: 0.7; }
+  92.6% { opacity: 0.3; }
+  94% { opacity: 0; }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bolt, .sky-flash-1, .sky-flash-2, .sky-flash-3 { animation: none !important; opacity: 0 !important; }
+}
+
 .auth-card {
+  position: relative;
+  z-index: 1;
   width: 100%;
   max-width: 380px;
   background: var(--panel);
@@ -102,7 +178,11 @@ label {
   border-radius: 16px;
   padding: 28px 26px;
 }
-.auth-logo { font-size: 22px; font-weight: 800; color: #93C5FD; margin-bottom: 4px; }
+.auth-logo {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 22px; font-weight: 800; color: #93C5FD; margin-bottom: 4px;
+}
+.brand-icon { flex: none; filter: drop-shadow(0 0 6px rgba(56,189,248,0.55)); }
 .auth-subtitle { color: var(--text-muted); font-size: 12px; margin: 0 0 18px; }
 .auth-tabs { display: flex; gap: 6px; margin-bottom: 18px; background: rgba(15,23,42,0.6); border-radius: 9px; padding: 4px; }
 .auth-tab {
@@ -123,7 +203,7 @@ label {
   padding: 12px 20px; border-bottom: 1px solid var(--border-soft);
   background: rgba(13, 20, 36, 0.8); position: sticky; top: 0; z-index: 20;
 }
-.topbar-brand { font-weight: 800; color: #93C5FD; font-size: 16px; }
+.topbar-brand { display: flex; align-items: center; gap: 7px; font-weight: 800; color: #93C5FD; font-size: 16px; }
 .topbar-right { display: flex; align-items: center; gap: 12px; }
 .user-email { color: var(--text-muted); font-size: 12px; }
 

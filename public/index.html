@@ -13,8 +13,50 @@
 
 <!-- ======================= ÉCRAN DE CONNEXION ======================= -->
 <div id="authScreen" class="auth-screen">
+
+  <!-- Orage animé en fond : éclairs réalistes (SVG + CSS), purement décoratif -->
+  <svg class="lightning-layer" viewBox="0 0 800 600" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">
+    <defs>
+      <linearGradient id="boltColor" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#F0F9FF"/>
+        <stop offset="55%" stop-color="#BAE6FD"/>
+        <stop offset="100%" stop-color="#38BDF8"/>
+      </linearGradient>
+    </defs>
+    <g class="bolt bolt-1">
+      <path class="bolt-glow" d="M150,-30 L118,150 L162,158 L96,330 L132,338 L58,560 L92,420 L60,412 L124,240 L88,232 L150,-30 Z"/>
+      <path class="bolt-core" d="M150,-30 L118,150 L162,158 L96,330 L132,338 L58,560 L92,420 L60,412 L124,240 L88,232 L150,-30 Z"/>
+      <path class="bolt-branch" d="M162,158 L214,206"/>
+      <path class="bolt-branch" d="M132,338 L84,372"/>
+    </g>
+    <g class="bolt bolt-2">
+      <path class="bolt-glow" d="M690,-30 L652,170 L698,178 L628,380 L666,388 L598,600 L636,440 L602,432 L660,250 L624,242 L690,-30 Z"/>
+      <path class="bolt-core" d="M690,-30 L652,170 L698,178 L628,380 L666,388 L598,600 L636,440 L602,432 L660,250 L624,242 L690,-30 Z"/>
+      <path class="bolt-branch" d="M698,178 L748,222"/>
+    </g>
+    <g class="bolt bolt-3">
+      <path class="bolt-glow" d="M420,-30 L388,130 L428,138 L368,300 L402,308 L340,500 L374,370 L344,362 L398,210 L366,202 L420,-30 Z"/>
+      <path class="bolt-core" d="M420,-30 L388,130 L428,138 L368,300 L402,308 L340,500 L374,370 L344,362 L398,210 L366,202 L420,-30 Z"/>
+      <path class="bolt-branch" d="M428,138 L472,176"/>
+    </g>
+  </svg>
+  <div class="sky-flash sky-flash-1"></div>
+  <div class="sky-flash sky-flash-2"></div>
+  <div class="sky-flash sky-flash-3"></div>
+
   <div class="auth-card">
-    <div class="auth-logo">⚡ Rapport Pro</div>
+    <div class="auth-logo">
+      <svg class="brand-icon" width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="brandGrad1" x1="4" y1="1" x2="16" y2="23" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#BAE6FD"/>
+            <stop offset="1" stop-color="#2563EB"/>
+          </linearGradient>
+        </defs>
+        <path d="M13 1 L4 14 H10 L8 23 L20 9 H13 L15 1 Z" fill="url(#brandGrad1)"/>
+      </svg>
+      <span>Rapport Pro</span>
+    </div>
     <p class="auth-subtitle">Rapports d'intervention technicien, générés en ligne.</p>
 
     <div class="auth-tabs">
@@ -46,7 +88,18 @@
 <div id="appScreen" class="app-screen hidden">
 
   <header class="topbar">
-    <div class="topbar-brand">⚡ Rapport Pro</div>
+    <div class="topbar-brand">
+      <svg class="brand-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="brandGrad2" x1="4" y1="1" x2="16" y2="23" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#BAE6FD"/>
+            <stop offset="1" stop-color="#2563EB"/>
+          </linearGradient>
+        </defs>
+        <path d="M13 1 L4 14 H10 L8 23 L20 9 H13 L15 1 Z" fill="url(#brandGrad2)"/>
+      </svg>
+      <span>Rapport Pro</span>
+    </div>
     <div class="topbar-right">
       <span id="userEmail" class="user-email"></span>
       <button id="btnLogout" class="btn btn-ghost btn-sm">Déconnexion</button>
