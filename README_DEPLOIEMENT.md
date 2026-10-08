@@ -7,16 +7,29 @@ GitHub puis déployée sur Vercel.
 ## 1. Architecture (pour comprendre ce qui a changé)
 
 - **Frontend** : `public/` — HTML/CSS/JS pur, aucune compilation nécessaire.
-  Servi tel quel par Vercel comme site statique.
-- **Backend** : `api/index.py` — une API Flask, déployée comme fonction
-  serverless Python par Vercel. Toutes les routes `/api/...` y sont gérées.
+  Vercel sert automatiquement tout fichier placé dans `public/**` comme
+  fichier statique, à son chemin d'origine (`public/index.html` → `/`,
+  `public/app.js` → `/app.js`, etc.).
+- **Backend** : `index.py` **à la racine du dépôt** (pas dans un sous-dossier
+  `api/`) — une API Flask détectée automatiquement par Vercel ("Flask
+  framework preset"). C'est important : Vercel ne reconnaît ce mode
+  automatique que si le fichier exportant l'objet Flask `app` s'appelle
+  `index.py` (ou `app.py`/`main.py`/`server.py`/`wsgi.py`/`asgi.py`) et se
+  trouve **à la racine** (ou dans `src/`/`app/`). Placé dans `api/`, Vercel
+  bascule dans un autre mode ("fonction par fichier") où `api/index.py` ne
+  répond qu'à l'URL exacte `/api` et pas à ses sous-routes comme
+  `/api/auth/login` — ce qui provoque des 404 sur toutes les routes de
+  l'API. Avec `index.py` à la racine, Flask gère toutes les requêtes qui ne
+  correspondent pas à un fichier statique de `public/`, donc toutes les
+  routes `/api/...` fonctionnent normalement.
   **Ce fichier est volontairement unique et autonome** (base de données,
   authentification, stockage des logos, génération du .docx et même le
-  modèle Word embarqué en base64 y sont tous regroupés) : le runtime Python
-  de Vercel ne déploie que le fichier de la fonction lui-même et n'embarque
-  pas automatiquement des fichiers ou dossiers voisins (un `api/_lib/`, un
-  `templates/` séparé...). Avoir tout dans un seul fichier élimine ce risque
-  une fois pour toutes — c'est moins élégant à lire, mais fiable.
+  modèle Word embarqué en base64 y sont tous regroupés), pour éviter tout
+  risque lié à des imports de fichiers voisins — c'est moins élégant à
+  lire, mais fiable.
+- **Aucun `vercel.json` n'est nécessaire** pour ce projet : la détection
+  Flask + la convention `public/**` suffisent, sans configuration de
+  routes ou de rewrites.
 - **Base de données** : PostgreSQL (via Vercel Postgres, gratuit en petit
   volume), pour les comptes, clients, sites, techniciens et logos. En
   développement local sans base configurée, l'app bascule automatiquement
@@ -30,7 +43,7 @@ GitHub puis déployée sur Vercel.
   portée sans dépendance à Qt.
 - **Modèle Word** (`templates/Fond de Page Rapport.docx`) : conservé dans le
   dépôt pour référence, mais la fonction déployée utilise en réalité une
-  copie encodée en base64 directement dans `api/index.py` (constante
+  copie encodée en base64 directement dans `index.py` (constante
   `_TEMPLATE_DOCX_B64`), pour la même raison de fiabilité de déploiement.
   **Si vous changez un jour ce modèle Word**, il faut régénérer cette
   constante :
@@ -42,7 +55,7 @@ GitHub puis déployée sur Vercel.
   " > /tmp/nouveau_b64.txt
   ```
   puis remplacer le contenu de `_TEMPLATE_DOCX_B64 = "..."` dans
-  `api/index.py` par le contenu de ce fichier.
+  `index.py` par le contenu de ce fichier.
 
 Chaque utilisateur a son propre compte (email + mot de passe) et sa propre
 bibliothèque clients/techniciens/logos, isolée des autres comptes.
@@ -66,9 +79,11 @@ git push -u origin main
 
 1. Sur [vercel.com](https://vercel.com), **Add New → Project**.
 2. Choisissez votre dépôt GitHub `rapport-pro-web`.
-3. Vercel détecte le fichier `vercel.json` à la racine : laissez les
-   réglages par défaut ("Other" / aucun framework), ne changez ni le
-   *Build Command* ni l'*Output Directory*.
+3. Vercel détecte automatiquement `index.py` comme application Flask et
+   `public/` comme dossier de fichiers statiques : laissez les réglages
+   par défaut (Framework Preset sur *Other*, Build Command et Output
+   Directory vides/automatiques — ne forcez pas *Output Directory* sur
+   `public`, cela peut interférer avec la détection Flask).
 4. Cliquez **Deploy**. Le premier déploiement va fonctionner pour la partie
    statique et l'API, mais l'inscription/connexion échouera tant que la
    base de données n'est pas créée (étape suivante) — c'est normal.
@@ -79,7 +94,7 @@ git push -u origin main
    (offre gratuite "Hobby" largement suffisante pour démarrer).
 2. Une fois créée, Vercel propose de la **relier au projet** (bouton
    "Connect Project") : acceptez. Cela ajoute automatiquement les variables
-   d'environnement `POSTGRES_URL` / `DATABASE_URL` dont `api/_lib/db.py` a
+   d'environnement `POSTGRES_URL` / `DATABASE_URL` dont `index.py` a
    besoin — vous n'avez rien à copier-coller.
 3. Toujours dans l'onglet Storage de la base, ouvrez **Query** (ou
    connectez-vous avec `psql` via la chaîne de connexion fournie), puis
@@ -92,7 +107,7 @@ git push -u origin main
 1. Toujours dans **Storage → Create Database → Blob**.
 2. Reliez-le au projet de la même façon ("Connect Project"). Cela ajoute
    automatiquement la variable d'environnement `BLOB_READ_WRITE_TOKEN`
-   utilisée par `api/_lib/blob.py` pour l'upload des logos.
+   utilisée par `index.py` pour l'upload des logos.
 
 ## 6. Variable d'environnement de sécurité (obligatoire)
 
@@ -120,7 +135,7 @@ possible depuis **Project Settings → Domains** si vous en avez un.
 
 ```bash
 pip install -r requirements.txt
-python3 api/index.py
+python3 index.py
 ```
 
 L'app tourne alors sur `http://127.0.0.1:5000`, avec une base SQLite locale
@@ -129,52 +144,56 @@ les logos. Ouvrez simplement `public/index.html` dans un navigateur après
 avoir adapté les appels `fetch()` si besoin, ou plus simplement servez tout
 le dossier avec Flask directement sur `http://127.0.0.1:5000/`.
 
-## 9. Note sur `vercel.json` (si vous le modifiez un jour)
+## 9. Pourquoi il ne faut PAS de `api/index.py` ni de `vercel.json` pour ce projet
 
-`vercel.json` contient une règle `rewrites` explicite qui envoie
-uniquement les chemins `/api/...` vers `api/index.py` :
+Ce projet ne contient **aucun `vercel.json`**, volontairement. Vercel
+propose deux façons différentes de déployer du Python, et il ne faut pas
+les mélanger :
 
-```json
-{
-  "outputDirectory": "public",
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index.py" }
-  ]
-}
-```
+- **Détection de framework (celle utilisée ici)** : si un fichier nommé
+  `index.py`, `app.py`, `main.py`, `server.py`, `wsgi.py` ou `asgi.py` est
+  présent **à la racine** du dépôt (ou dans `src/`/`app/`) et exporte un
+  objet Flask `app`, Vercel route **toutes** les requêtes qui ne
+  correspondent pas à un fichier de `public/**` vers cette application.
+  Toutes les routes définies avec `@app.get(...)`, `@app.post(...)`, etc.
+  fonctionnent alors normalement, y compris leurs sous-chemins
+  (`/api/auth/login`, `/api/clients/12`, ...).
+- **Fonctions fichier par fichier (`/api/*.py`)** : si ce même fichier est
+  placé dans un dossier `api/`, Vercel bascule dans un mode différent où
+  chaque fichier `.py` de `api/` devient une fonction indépendante,
+  accessible **uniquement à son chemin de fichier exact** — `api/index.py`
+  répond alors seulement à `/api`, jamais à `/api/auth/login` et consorts,
+  qui renvoient un 404. C'est l'erreur qui s'est produite ici après une
+  tentative de rangement dans `api/` : visuellement plus propre, mais
+  incompatible avec une API Flask qui gère elle-même son routage interne.
 
-Cette règle est nécessaire : sans elle, Vercel traite parfois la fonction
-Python comme gestionnaire par défaut de **toutes** les routes non
-reconnues, y compris `/` — ce qui fait que Flask répond avec son propre
-404 ("Not Found / The requested URL was not found on the server") à la
-place de la page d'accueil statique (`public/index.html`). Avec cette
-règle, seules les requêtes commençant par `/api/` sont envoyées à Flask
-(qui reçoit bien le chemin complet d'origine, ex. `/api/auth/login`, pas
-le chemin de destination de la règle) ; tout le reste (`/`, `/app.js`,
-`/styles.css`, etc.) est servi normalement comme fichier statique depuis
-`public/`.
+**Résumé** : gardez `index.py` à la racine, ne le déplacez jamais dans un
+dossier `api/`, et n'ajoutez pas de `vercel.json` avec des `rewrites` ou un
+`outputDirectory` — la détection automatique de Flask + la convention
+`public/**` suffisent et fonctionnent ensemble sans aucune configuration.
 
-Si un jour `/api/...` se met à retourner un 404 générique Flask alors que
-la route existe bien dans `api/index.py`, vérifiez que cette règle
-`rewrites` est toujours présente et orthographiée exactement ainsi.
+La route `/local-blob/<key>` (resservir un logo en développement local
+sans compte Vercel Blob) n'est disponible qu'en local
+(`python3 index.py`), pas en production — sans incidence une fois Vercel
+Blob relié au projet (étape 5), puisque cette route n'est alors jamais
+utilisée.
 
-La seule route qui en dépendrait (`/local-blob/<key>`, utilisée pour
-resservir un logo en développement local sans compte Vercel Blob) n'est
-donc disponible qu'en local (`python3 api/index.py`), pas en production —
-sans incidence une fois Vercel Blob relié au projet (étape 5), puisque
-cette route n'est alors jamais utilisée.
+## 10. En cas d'erreur 404 sur la page d'accueil ou sur l'API
 
-## 10. En cas d'erreur « 404 NOT_FOUND » sur la page (page Vercel, pas Flask)
-
-Si c'est la page d'erreur **de Vercel** (pas celle de Flask) qui s'affiche
-sur la page d'accueil :
-
-1. Dans **Project Settings → General → Build & Development Settings**,
-   vérifiez que *Output Directory* vaut `public` (ou *Automatic*).
-2. Repoussez le code et relancez un déploiement (**Deployments → ⋯ → Redeploy**).
-3. Dans l'onglet **Deployments → [déploiement] → Functions**, `api/index.py`
-   doit être listée : si elle n'apparaît pas, regardez l'onglet **Build
-   Logs** pour une erreur d'installation de dépendances.
+- Si c'est la page d'erreur **de Vercel** ("404: NOT_FOUND", avec un ID
+  d'erreur) qui s'affiche sur la page d'accueil : dans **Project Settings
+  → General → Build & Development Settings**, vérifiez que *Output
+  Directory* est sur **Automatic / vide** (pas forcé sur `public`), et que
+  rien ne force un *Build Command*. Redéployez ensuite.
+- Si c'est le 404 **de Flask** ("Not Found — The requested URL was not
+  found on the server...") qui s'affiche, que ce soit sur `/` ou sur une
+  route `/api/...` qui existe pourtant dans `index.py` : vérifiez que
+  `index.py` est bien à la racine du dépôt (pas dans `api/`) et qu'aucun
+  `vercel.json` ne redéfinit le routage (voir section 9).
+- Dans tous les cas, l'onglet **Deployments → [déploiement] → Functions**
+  doit lister une fonction correspondant à `index.py` : si elle n'apparaît
+  pas, regardez l'onglet **Build Logs** pour une erreur d'installation de
+  dépendances.
 
 ## 11. Limites connues de cette version web
 
