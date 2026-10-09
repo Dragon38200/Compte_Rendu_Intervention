@@ -135,7 +135,10 @@
         </div>
         <div class="field">
           <label>ADRESSE CLIENT</label>
-          <input type="text" id="fAdresse" placeholder="Adresse du client...">
+          <div class="field-with-btn">
+            <input type="text" id="fAdresse" placeholder="Adresse du client...">
+            <button type="button" class="btn-icon" id="btnMapAdresse" title="Voir l'adresse sur la carte">🗺️</button>
+          </div>
         </div>
       </div>
 
@@ -293,6 +296,15 @@
   <div class="modal-header"><h3>Aperçu</h3><button class="modal-close" data-close>✕</button></div>
   <div class="modal-body modal-image-body">
     <img id="previewImageFull" alt="Aperçu">
+  </div>
+</div>
+
+<!-- Carte (adresse client) -->
+<div id="modalMap" class="modal modal-map hidden">
+  <div class="modal-header"><h3 id="mapModalTitle">Adresse sur la carte</h3><button class="modal-close" data-close>✕</button></div>
+  <div class="modal-body modal-map-body">
+    <iframe id="mapIframe" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>
+    <a id="mapOpenExternal" class="map-open-link" href="#" target="_blank" rel="noopener">Ouvrir dans Google Maps ↗</a>
   </div>
 </div>
 

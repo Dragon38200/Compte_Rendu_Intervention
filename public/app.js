@@ -1055,6 +1055,33 @@ document.getElementById("modalBackdrop").addEventListener("click", () => {
 });
 
 /* ===================================================================== */
+/*  Carte (adresse client)                                               */
+/* ===================================================================== */
+document.getElementById("btnMapAdresse").addEventListener("click", () => {
+  const adresse = document.getElementById("fAdresse").value.trim();
+  if (!adresse) {
+    alert("Renseigne d'abord l'adresse du client avant de l'afficher sur la carte.");
+    return;
+  }
+  // Inclure le nom du client aide Google Maps à mieux situer une adresse
+  // partielle (ex: sans ville) quand ce champ est rempli.
+  const client = document.getElementById("fClient").value.trim();
+  const query = encodeURIComponent(client ? `${adresse} (${client})` : adresse);
+
+  document.getElementById("mapModalTitle").textContent = `Adresse — ${adresse}`;
+  document.getElementById("mapIframe").src = `https://www.google.com/maps?q=${query}&output=embed`;
+  document.getElementById("mapOpenExternal").href = `https://www.google.com/maps/search/?api=1&query=${query}`;
+  openModal("modalMap");
+});
+document.getElementById("modalMap").querySelector("[data-close]").addEventListener("click", () => {
+  document.getElementById("mapIframe").src = ""; // stoppe le chargement de la carte une fois fermée
+});
+document.getElementById("modalBackdrop").addEventListener("click", () => {
+  const frame = document.getElementById("mapIframe");
+  if (frame.src) frame.src = "";
+});
+
+/* ===================================================================== */
 /*  Mes rapports (historique des rapports Word générés)                  */
 /* ===================================================================== */
 function formatFileSize(bytes) {
