@@ -85,6 +85,7 @@
       <span>Logiciel de compte rendus d'interventions Mounier SAS</span>
     </div>
     <div class="topbar-right">
+      <button type="button" class="btn btn-ghost btn-sm" id="btnMesRapports">📂 Mes rapports</button>
       <span id="userEmail" class="user-email"></span>
       <button id="btnLogout" class="btn btn-ghost btn-sm">Déconnexion</button>
     </div>
@@ -292,6 +293,15 @@
   <div class="modal-header"><h3>Aperçu</h3><button class="modal-close" data-close>✕</button></div>
   <div class="modal-body modal-image-body">
     <img id="previewImageFull" alt="Aperçu">
+  </div>
+</div>
+
+<!-- Mes rapports (historique des rapports Word générés) -->
+<div id="modalRapports" class="modal hidden">
+  <div class="modal-header"><h3>Mes rapports</h3><button class="modal-close" data-close>✕</button></div>
+  <div class="modal-body">
+    <p class="modal-hint">Chaque rapport Word généré est automatiquement enregistré ici — pratique pour le retrouver sans avoir à le regénérer.</p>
+    <div class="modal-list modal-list-full" id="rapportsList"></div>
   </div>
 </div>
 

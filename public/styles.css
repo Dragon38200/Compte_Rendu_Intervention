@@ -363,6 +363,18 @@ label {
 .modal-form { display: flex; flex-direction: column; gap: 8px; }
 .modal-form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
 
+.modal-list-full { max-height: 440px; }
+.rapport-row {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border-bottom: 1px solid rgba(148,163,184,0.1); font-size: 12px;
+}
+.rapport-row:last-child { border-bottom: none; }
+.rapport-main { flex: 1; min-width: 0; }
+.rapport-nom { font-weight: 600; color: var(--text); word-break: break-all; }
+.rapport-meta { color: var(--text-muted); font-size: 10px; margin-top: 2px; }
+.rapport-actions { display: flex; gap: 6px; flex: none; }
+.modal-empty { color: var(--text-muted); font-size: 12px; padding: 16px; text-align: center; }
+
 .modal-image { width: min(90vw, 900px); }
 .modal-image-body { display: flex; justify-content: center; align-items: center; }
 .modal-image-body img { max-width: 100%; max-height: 70vh; border-radius: 8px; }

@@ -1054,4 +1054,64 @@ document.getElementById("modalBackdrop").addEventListener("click", () => {
   if (confirmResolver) { confirmResolver(false); confirmResolver = null; }
 });
 
+/* ===================================================================== */
+/*  Mes rapports (historique des rapports Word générés)                  */
+/* ===================================================================== */
+function formatFileSize(bytes) {
+  if (!bytes) return "";
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} Ko`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} Mo`;
+}
+function formatRapportDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso.replace(" ", "T") + (iso.includes("Z") ? "" : "Z"));
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" })
+    + " à " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+}
+
+async function renderRapportsList() {
+  const list = document.getElementById("rapportsList");
+  list.innerHTML = '<div class="modal-empty">Chargement…</div>';
+  let rapports;
+  try {
+    rapports = await api("/api/rapports");
+  } catch (err) {
+    list.innerHTML = `<div class="modal-empty">Impossible de charger la liste : ${err.message}</div>`;
+    return;
+  }
+  if (!rapports.length) {
+    list.innerHTML = '<div class="modal-empty">Aucun rapport enregistré pour l’instant — ils apparaîtront ici après chaque génération au format Word.</div>';
+    return;
+  }
+  list.innerHTML = "";
+  rapports.forEach(r => {
+    const row = document.createElement("div");
+    row.className = "rapport-row";
+    const metaParts = [r.client, r.date_rapport, formatFileSize(r.taille_octets), formatRapportDate(r.created_at)].filter(Boolean);
+    row.innerHTML = `
+      <div class="rapport-main">
+        <div class="rapport-nom">${r.nom}</div>
+        <div class="rapport-meta">${metaParts.join(" · ")}</div>
+      </div>
+      <div class="rapport-actions">
+        <a class="btn btn-ghost btn-sm" href="${r.url}" download="${r.nom}" target="_blank" rel="noopener">⤓ Télécharger</a>
+        <button type="button" class="btn btn-danger-ghost btn-sm" data-id="${r.id}">Supprimer</button>
+      </div>
+    `;
+    row.querySelector("[data-id]").addEventListener("click", async () => {
+      const ok = await confirmDialog("Supprimer ce rapport ?", `« ${r.nom} » sera définitivement supprimé de « Mes rapports ».`);
+      if (!ok) return;
+      await api(`/api/rapports/${r.id}`, { method: "DELETE" });
+      renderRapportsList();
+    });
+    list.appendChild(row);
+  });
+}
+
+document.getElementById("btnMesRapports").addEventListener("click", () => {
+  openModal("modalRapports");
+  renderRapportsList();
+});
+
 renderGallery();

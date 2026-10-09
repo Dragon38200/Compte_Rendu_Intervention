@@ -85,7 +85,51 @@ CREATE TABLE IF NOT EXISTS logos (
     nom TEXT NOT NULL,
     url TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS rapports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    nom TEXT NOT NULL,
+    client TEXT,
+    date_rapport TEXT,
+    url TEXT NOT NULL,
+    taille_octets INTEGER,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
+
+_postgres_rapports_table_ready = False
+
+
+def _ensure_postgres_rapports_table():
+    """
+    Crée la table `rapports` au premier besoin si elle n'existe pas encore,
+    pour que l'historique des rapports fonctionne même sans ré-exécuter
+    schema.sql manuellement sur une base déjà en place (CREATE TABLE IF NOT
+    EXISTS est sans danger : ne touche à rien si la table existe déjà).
+    """
+    global _postgres_rapports_table_ready
+    if _postgres_rapports_table_ready or not IS_POSTGRES:
+        return
+    conn = db_get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS rapports (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                nom TEXT NOT NULL,
+                client TEXT,
+                date_rapport TEXT,
+                url TEXT NOT NULL,
+                taille_octets INTEGER,
+                created_at TIMESTAMPTZ DEFAULT now()
+            );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_rapports_user ON rapports(user_id);")
+        conn.commit()
+    finally:
+        conn.close()
+    _postgres_rapports_table_ready = True
 
 
 def _db_adapt(sql):
@@ -265,6 +309,25 @@ def blob_upload_bytes(data: bytes, filename_hint: str, content_type: str = "appl
         return f"/local-blob/{key}"
 
 
+def save_generated_report(user_id, filename, payload, docx_bytes):
+    """
+    Enregistre un rapport Word généré dans « Mes rapports » : le fichier
+    part sur Vercel Blob (même mécanisme que les logos) et une ligne est
+    ajoutée dans la table `rapports` pour pouvoir le retrouver plus tard.
+    """
+    _ensure_postgres_rapports_table()
+    url = blob_upload_bytes(
+        docx_bytes, filename,
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    db_insert_returning_id(
+        "INSERT INTO rapports (user_id, nom, client, date_rapport, url, taille_octets) "
+        "VALUES (%s, %s, %s, %s, %s, %s)",
+        (user_id, filename, (payload.get("client") or "").strip(),
+         (payload.get("date") or "").strip(), url, len(docx_bytes)),
+    )
+
+
 def blob_read_local(key: str):
     path = os.path.join(LOCAL_BLOB_DIR, key)
     if not os.path.exists(path):
@@ -389,6 +452,30 @@ def apply_dynamic_footer(doc, title_text):
         print(f"Avertissement : personnalisation du pied de page ignorée ({e})")
 
 
+def force_update_fields_on_open(doc):
+    """
+    Les champs Word (PAGE, NUMPAGES...) insérés par apply_dynamic_footer
+    sont bien de VRAIS champs dynamiques, mais Word n'affiche par défaut
+    que leur dernière valeur mise en cache tant qu'on ne les recalcule pas
+    soi-même (sélection + F9, ou Fichier > Imprimer qui déclenche un
+    recalcul). Beaucoup d'utilisateurs ne le savent pas, d'où l'impression
+    que la pagination "ne s'incrémente pas".
+
+    Cette fonction règle `updateFields` dans les paramètres du document
+    (settings.xml) : Word recalcule alors TOUS les champs automatiquement
+    dès l'ouverture du fichier, sans aucune action de l'utilisateur.
+    """
+    try:
+        settings_el = doc.settings.element
+        existing = settings_el.find(qn("w:updateFields"))
+        if existing is None:
+            existing = OxmlElement("w:updateFields")
+            settings_el.insert(0, existing)
+        existing.set(qn("w:val"), "true")
+    except Exception as e:
+        print(f"Avertissement : mise à jour automatique des champs ignorée ({e})")
+
+
 def _prepare_image_bytes_for_jpeg(raw_bytes):
     with Image.open(io.BytesIO(raw_bytes)) as img:
         img = ImageOps.exif_transpose(img)
@@ -429,13 +516,20 @@ def build_report_docx(payload, photos, logo_bytes=None):
     try:
         doc = Document(io.BytesIO(_get_template_bytes()))
 
-        footer_title_parts = [
-            (payload.get("client") or "").strip(),
-            (payload.get("equipement") or "").strip(),
-        ]
-        footer_title = " - ".join(part for part in footer_title_parts if part)
+        # Titre affiché dans le cartouche (pied de page) : le nom du compte
+        # rendu tel que saisi/généré dans le champ "Nom du fichier" du
+        # formulaire — c'est le nom qui identifie CE rapport précis. On ne
+        # retombe sur "Client - Équipement" que si ce champ est vide.
+        footer_title = (payload.get("filename") or "").strip()
+        if not footer_title:
+            footer_title_parts = [
+                (payload.get("client") or "").strip(),
+                (payload.get("equipement") or "").strip(),
+            ]
+            footer_title = " - ".join(part for part in footer_title_parts if part)
         if footer_title:
             apply_dynamic_footer(doc, footer_title)
+        force_update_fields_on_open(doc)
 
         if logo_bytes:
             logo_path = os.path.join(tempfile.gettempdir(), f"logo_{os.getpid()}_{random.randint(0, 999999)}.png")
@@ -659,11 +753,14 @@ def build_report_pdf(payload, photos, logo_bytes=None):
     )
     from reportlab.pdfgen.canvas import Canvas
 
-    footer_title_parts = [
-        (payload.get("client") or "").strip(),
-        (payload.get("equipement") or "").strip(),
-    ]
-    footer_title = " - ".join(part for part in footer_title_parts if part) or "Rapport d'intervention"
+    footer_title = (payload.get("filename") or "").strip()
+    if not footer_title:
+        footer_title_parts = [
+            (payload.get("client") or "").strip(),
+            (payload.get("equipement") or "").strip(),
+        ]
+        footer_title = " - ".join(part for part in footer_title_parts if part)
+    footer_title = footer_title or "Rapport d'intervention"
 
     PAGE_W, PAGE_H = A4
     MARGIN = 2 * cm
@@ -1154,6 +1251,28 @@ def delete_logo(logo_id):
     return jsonify({"ok": True})
 
 
+@app.get("/api/rapports")
+@login_required
+def list_rapports():
+    _ensure_postgres_rapports_table()
+    return jsonify(db_fetchall(
+        "SELECT id, nom, client, date_rapport, url, taille_octets, created_at "
+        "FROM rapports WHERE user_id = %s ORDER BY created_at DESC, id DESC",
+        (g.user_id,),
+    ))
+
+
+@app.delete("/api/rapports/<int:rapport_id>")
+@login_required
+def delete_rapport(rapport_id):
+    _ensure_postgres_rapports_table()
+    owner = db_fetchone("SELECT id FROM rapports WHERE id = %s AND user_id = %s", (rapport_id, g.user_id))
+    if not owner:
+        return jsonify({"error": "Rapport introuvable."}), 404
+    db_execute("DELETE FROM rapports WHERE id = %s", (rapport_id,))
+    return jsonify({"ok": True})
+
+
 @app.get("/local-blob/<key>")
 def local_blob(key):
     """Secours UNIQUEMENT pour le développement local sans compte Vercel
@@ -1196,6 +1315,15 @@ def generate_report():
     filename = (payload.get("filename") or "rapport").strip() or "rapport"
     if not filename.lower().endswith(".docx"):
         filename += ".docx"
+
+    # Sauvegarde best-effort dans "Mes rapports" (Vercel Blob + base de
+    # données) : si ça échoue pour une raison quelconque (Blob non relié,
+    # etc.), on ne bloque surtout pas le téléchargement du rapport, qui est
+    # la chose prioritaire pour l'utilisateur à cet instant.
+    try:
+        save_generated_report(g.user_id, filename, payload, docx_bytes)
+    except Exception as e:
+        print(f"Avertissement : sauvegarde dans « Mes rapports » ignorée ({e})")
 
     return Response(
         docx_bytes,
