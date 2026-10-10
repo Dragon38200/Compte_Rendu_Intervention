@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Administration — Mounier SAS</title>
+<link rel="stylesheet" href="styles.css" />
+<style>
+  body {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 40px 16px;
+  }
+  .admin-wrap { width: 100%; max-width: 980px; }
+
+  /* ---- Login ---- */
+  .admin-login-card {
+    max-width: 380px;
+    margin: 80px auto 0;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 32px 28px;
+  }
+  .admin-login-card h1 {
+    font-size: 18px;
+    margin: 0 0 4px;
+    color: var(--text);
+  }
+  .admin-login-card p.sub {
+    color: var(--text-muted);
+    font-size: 13px;
+    margin: 0 0 22px;
+  }
+  .admin-field { margin-bottom: 14px; }
+  .admin-error {
+    background: rgba(225, 29, 72, 0.12);
+    border: 1px solid rgba(225, 29, 72, 0.35);
+    color: #FCA5A5;
+    font-size: 12.5px;
+    padding: 8px 10px;
+    border-radius: 7px;
+    margin-bottom: 14px;
+  }
+
+  /* ---- Dashboard ---- */
+  .admin-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+  }
+  .admin-header h1 {
+    font-size: 20px;
+    margin: 0 0 2px;
+  }
+  .admin-header p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+  .stat-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 14px;
+  }
+  .stat-card .value {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--accent);
+    line-height: 1.1;
+  }
+  .stat-card .label {
+    margin-top: 6px;
+    color: var(--text-muted);
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  .admin-section-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 0 0 10px;
+  }
+  table.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  table.admin-table th, table.admin-table td {
+    padding: 10px 12px;
+    text-align: left;
+    font-size: 12.5px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  table.admin-table th {
+    color: var(--text-muted);
+    text-transform: uppercase;
+    font-size: 10.5px;
+    letter-spacing: 0.4px;
+    font-weight: 700;
+  }
+  table.admin-table tr:last-child td { border-bottom: none; }
+  table.admin-table td.muted { color: var(--text-muted); }
+  .admin-logout-btn { white-space: nowrap; }
+  .admin-empty {
+    color: var(--text-muted);
+    font-size: 13px;
+    padding: 16px 4px;
+  }
+</style>
+</head>
+<body>
+
+  <!-- Écran de connexion admin -->
+  <div id="admin-login-screen" class="admin-login-card">
+    <h1>Administration</h1>
+    <p class="sub">Accès réservé — Mounier SAS</p>
+    <div id="admin-login-error" class="admin-error hidden"></div>
+    <form id="admin-login-form">
+      <div class="admin-field">
+        <label for="admin-username">Identifiant</label>
+        <input type="text" id="admin-username" autocomplete="username" required />
+      </div>
+      <div class="admin-field">
+        <label for="admin-password">Mot de passe</label>
+        <input type="password" id="admin-password" autocomplete="current-password" required />
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">Se connecter</button>
+    </form>
+  </div>
+
+  <!-- Tableau de bord admin -->
+  <div id="admin-dashboard" class="admin-wrap hidden">
+    <div class="admin-header">
+      <div>
+        <h1>Administration</h1>
+        <p>Vue d'ensemble de l'application — Mounier SAS</p>
+      </div>
+      <button id="admin-logout-btn" class="btn btn-ghost admin-logout-btn">Déconnexion</button>
+    </div>
+
+    <div id="admin-stats" class="stats-grid"></div>
+
+    <h2 class="admin-section-title">Utilisateurs</h2>
+    <div id="admin-users-wrap">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>Créé le</th>
+            <th>Clients</th>
+            <th>Techniciens</th>
+            <th>Logos</th>
+            <th>Rapports</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="admin-users-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="admin.js"></script>
+</body>
+</html>

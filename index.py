@@ -275,6 +275,58 @@ def login_required(f):
 
 
 # ======================================================================
+#  Authentification admin (compte unique, séparé des comptes utilisateurs)
+#
+#  Identifiants définis par variables d'environnement Vercel (Project
+#  Settings -> Environment Variables : ADMIN_USERNAME / ADMIN_PASSWORD),
+#  donc stables d'un déploiement à l'autre — ils ne dépendent d'aucune
+#  ligne en base de données et ne sont jamais réinitialisés en repoussant
+#  du code. Des valeurs par défaut sont fournies pour que ça fonctionne
+#  immédiatement sans configuration ; il est toutefois recommandé de les
+#  redéfinir dans Vercel pour ne pas garder ce mot de passe par défaut.
+# ======================================================================
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "17051992")
+
+
+def auth_create_admin_token():
+    now = int(time.time())
+    payload = {"admin": True, "iat": now, "exp": now + TOKEN_TTL_SECONDS}
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
+
+
+def _set_admin_auth_cookie(resp, token):
+    resp.set_cookie(
+        "admin_token", token,
+        httponly=True,
+        secure=IS_PROD,
+        samesite="Lax",
+        max_age=TOKEN_TTL_SECONDS,
+        path="/",
+    )
+
+
+def _current_admin_authenticated():
+    token = request.cookies.get("admin_token")
+    if not token:
+        return False
+    try:
+        data = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
+    except Exception:
+        return False
+    return bool(data.get("admin"))
+
+
+def admin_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if not _current_admin_authenticated():
+            return jsonify({"error": "Non authentifié (admin)"}), 401
+        return f(*args, **kwargs)
+    return wrapper
+
+
+# ======================================================================
 #  Stockage des logos (Vercel Blob en production, disque local en dev)
 # ======================================================================
 BLOB_TOKEN = os.environ.get("BLOB_READ_WRITE_TOKEN")
@@ -1369,6 +1421,86 @@ def generate_report_pdf():
         mimetype="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@app.post("/api/admin/login")
+def admin_login():
+    data = request.get_json(force=True, silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+
+    if username != ADMIN_USERNAME or password != ADMIN_PASSWORD:
+        return jsonify({"error": "Identifiants incorrects."}), 401
+
+    token = auth_create_admin_token()
+    resp = jsonify({"ok": True})
+    _set_admin_auth_cookie(resp, token)
+    return resp
+
+
+@app.post("/api/admin/logout")
+def admin_logout():
+    resp = jsonify({"ok": True})
+    resp.set_cookie("admin_token", "", expires=0, path="/")
+    return resp
+
+
+@app.get("/api/admin/me")
+def admin_me():
+    return jsonify({"authenticated": _current_admin_authenticated()})
+
+
+@app.get("/api/admin/stats")
+@admin_required
+def admin_stats():
+    _ensure_postgres_rapports_table()
+
+    def _count(table):
+        row = db_fetchone(f"SELECT COUNT(*) AS n FROM {table}")
+        return int(row["n"]) if row else 0
+
+    storage_row = db_fetchone("SELECT COALESCE(SUM(taille_octets), 0) AS total FROM rapports")
+    storage_bytes = int(storage_row["total"]) if storage_row else 0
+
+    return jsonify({
+        "users": _count("users"),
+        "clients": _count("clients"),
+        "sites": _count("sites"),
+        "techniciens": _count("techniciens"),
+        "logos": _count("logos"),
+        "rapports": _count("rapports"),
+        "storage_bytes": storage_bytes,
+    })
+
+
+@app.get("/api/admin/users")
+@admin_required
+def admin_list_users():
+    users = db_fetchall("SELECT id, email, created_at FROM users ORDER BY created_at DESC, id DESC")
+    for u in users:
+        counts = db_fetchone(
+            "SELECT "
+            "(SELECT COUNT(*) FROM clients WHERE user_id = %s) AS clients, "
+            "(SELECT COUNT(*) FROM techniciens WHERE user_id = %s) AS techniciens, "
+            "(SELECT COUNT(*) FROM logos WHERE user_id = %s) AS logos, "
+            "(SELECT COUNT(*) FROM rapports WHERE user_id = %s) AS rapports",
+            (u["id"], u["id"], u["id"], u["id"]),
+        )
+        u["clients"] = int(counts["clients"]) if counts else 0
+        u["techniciens"] = int(counts["techniciens"]) if counts else 0
+        u["logos"] = int(counts["logos"]) if counts else 0
+        u["rapports"] = int(counts["rapports"]) if counts else 0
+    return jsonify(users)
+
+
+@app.delete("/api/admin/users/<int:user_id>")
+@admin_required
+def admin_delete_user(user_id):
+    owner = db_fetchone("SELECT id FROM users WHERE id = %s", (user_id,))
+    if not owner:
+        return jsonify({"error": "Utilisateur introuvable."}), 404
+    db_execute("DELETE FROM users WHERE id = %s", (user_id,))
+    return jsonify({"ok": True})
 
 
 @app.get("/api/health")
