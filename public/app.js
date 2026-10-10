@@ -935,6 +935,7 @@ async function buildGenerateFormData() {
     client: document.getElementById("fClient").value.trim(),
     site: document.getElementById("fSite").value.trim(),
     adresse: document.getElementById("fAdresse").value.trim(),
+    include_map: document.getElementById("fIncludeMap").checked,
     contact: document.getElementById("fContact").value.trim(),
     equipement: document.getElementById("fEquipement").value.trim(),
     serie: document.getElementById("fSerie").value.trim(),
@@ -1028,6 +1029,7 @@ document.getElementById("btnReset").addEventListener("click", async () => {
 
   ["fFolder", "fTechnicien", "fClient", "fSite", "fAdresse", "fContact", "fEquipement", "fSerie", "fObservations"]
     .forEach(id => { document.getElementById(id).value = ""; });
+  document.getElementById("fIncludeMap").checked = false;
   setDefaultDateAndFilename();
 
   itemsBody.innerHTML = "";

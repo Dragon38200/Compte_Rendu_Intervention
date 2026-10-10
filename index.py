@@ -28,6 +28,7 @@ import unicodedata
 import re
 import tempfile
 import uuid
+import math
 from functools import wraps
 
 from flask import Flask, request, jsonify, g, send_file, Response
@@ -40,7 +41,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ROW_HEIGHT_RULE
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageDraw
 
 app = Flask(__name__)
 IS_PROD = bool(os.environ.get("VERCEL"))
@@ -608,6 +609,126 @@ def _decode_data_url_or_b64(value):
     return base64.b64decode(value)
 
 
+def geocode_address(adresse):
+    """
+    Convertit une adresse texte en (latitude, longitude) via l'API de
+    géocodage gratuite et sans clé de OpenStreetMap (Nominatim). Renvoie
+    None si l'adresse est vide, introuvable, ou si le service est
+    indisponible (la carte est alors simplement omise du rapport, sans
+    bloquer sa génération).
+    """
+    adresse = (adresse or "").strip()
+    if not adresse:
+        return None
+    try:
+        resp = requests.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={"q": adresse, "format": "json", "limit": 1},
+            headers={"User-Agent": "RapportProMounierSAS/1.0 (contact: remi.grebert@gmail.com)"},
+            timeout=8,
+        )
+        resp.raise_for_status()
+        results = resp.json()
+        if not results:
+            return None
+        return float(results[0]["lat"]), float(results[0]["lon"])
+    except Exception as e:
+        print(f"Avertissement : géocodage de l'adresse ignoré ({e})")
+        return None
+
+
+def _latlon_to_pixel(lat, lon, zoom):
+    """Coordonnées en pixels (projection Web Mercator / slippy map), sur
+    la grille complète au niveau de zoom donné (256px par tuile)."""
+    lat_rad = math.radians(lat)
+    n = 2 ** zoom
+    x = (lon + 180.0) / 360.0 * n * 256
+    y = (1.0 - math.log(math.tan(lat_rad) + 1.0 / math.cos(lat_rad)) / math.pi) / 2.0 * n * 256
+    return x, y
+
+
+def build_static_map_image(adresse, width=700, height=420, zoom=16):
+    """
+    Construit une image PNG (bytes) d'une carte centrée sur l'adresse
+    donnée, avec un repère, en assemblant les tuiles publiques et
+    gratuites d'OpenStreetMap (aucune clé API requise). Renvoie None si
+    l'adresse ne peut pas être localisée ou si le service de cartes est
+    injoignable — la section carte est alors simplement omise.
+    """
+    coords = geocode_address(adresse)
+    if not coords:
+        return None
+    lat, lon = coords
+
+    try:
+        px, py = _latlon_to_pixel(lat, lon, zoom)
+
+        # Tuiles nécessaires pour couvrir width x height autour du point.
+        tile_x0 = int((px - width / 2) // 256)
+        tile_y0 = int((py - height / 2) // 256)
+        tile_x1 = int((px + width / 2) // 256)
+        tile_y1 = int((py + height / 2) // 256)
+
+        n = 2 ** zoom
+        mosaic_w = (tile_x1 - tile_x0 + 1) * 256
+        mosaic_h = (tile_y1 - tile_y0 + 1) * 256
+        mosaic = Image.new("RGB", (mosaic_w, mosaic_h), (226, 232, 240))
+
+        headers = {"User-Agent": "RapportProMounierSAS/1.0 (contact: remi.grebert@gmail.com)"}
+        for tx in range(tile_x0, tile_x1 + 1):
+            for ty in range(tile_y0, tile_y1 + 1):
+                tx_wrapped = tx % n
+                if ty < 0 or ty >= n:
+                    continue
+                try:
+                    tile_resp = requests.get(
+                        f"https://tile.openstreetmap.org/{zoom}/{tx_wrapped}/{ty}.png",
+                        headers=headers, timeout=6,
+                    )
+                    tile_resp.raise_for_status()
+                    tile_img = Image.open(io.BytesIO(tile_resp.content)).convert("RGB")
+                    mosaic.paste(tile_img, ((tx - tile_x0) * 256, (ty - tile_y0) * 256))
+                except Exception:
+                    continue  # tuile manquante : on garde le fond gris clair
+
+        # Découpe centrée sur le point exact, à la taille demandée.
+        origin_x = tile_x0 * 256
+        origin_y = tile_y0 * 256
+        center_x = px - origin_x
+        center_y = py - origin_y
+        left = int(center_x - width / 2)
+        top = int(center_y - height / 2)
+        left = max(0, min(left, mosaic_w - width)) if mosaic_w > width else 0
+        top = max(0, min(top, mosaic_h - height)) if mosaic_h > height else 0
+        cropped = mosaic.crop((left, top, left + width, top + height))
+
+        # Marqueur (épingle rouge) à l'emplacement exact de l'adresse.
+        marker_x = int(center_x - left)
+        marker_y = int(center_y - top)
+        draw = ImageDraw.Draw(cropped)
+        pin_r = 9
+        draw.polygon(
+            [(marker_x, marker_y + pin_r + 10), (marker_x - pin_r, marker_y - pin_r + 6),
+             (marker_x + pin_r, marker_y - pin_r + 6)],
+            fill="#DC2626",
+        )
+        draw.ellipse(
+            [marker_x - pin_r, marker_y - pin_r - 6, marker_x + pin_r, marker_y + pin_r - 6],
+            fill="#DC2626", outline="#7F1D1D", width=2,
+        )
+        draw.ellipse(
+            [marker_x - 3, marker_y - 9, marker_x + 3, marker_y - 3],
+            fill="#FFFFFF",
+        )
+
+        out_buf = io.BytesIO()
+        cropped.save(out_buf, format="PNG")
+        return out_buf.getvalue()
+    except Exception as e:
+        print(f"Avertissement : génération de la carte ignorée ({e})")
+        return None
+
+
 def build_report_docx(payload, photos, logo_bytes=None):
     """
     Construit le rapport .docx et renvoie ses bytes.
@@ -676,6 +797,28 @@ def build_report_docx(payload, photos, logo_bytes=None):
             tbl.rows[i].cells[0].paragraphs[0].runs[0].font.bold = True
 
         doc.add_paragraph()
+
+        if payload.get("include_map") and (payload.get("adresse") or "").strip():
+            map_bytes = build_static_map_image(payload.get("adresse"))
+            if map_bytes:
+                map_path = os.path.join(
+                    tempfile.gettempdir(), f"map_{os.getpid()}_{random.randint(0, 999999)}.png"
+                )
+                with open(map_path, "wb") as f:
+                    f.write(map_bytes)
+                temp_files.append(map_path)
+
+                doc.add_heading("Localisation", level=1)
+                p_map = doc.add_paragraph()
+                p_map.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                p_map.add_run().add_picture(map_path, width=Inches(6.0))
+                p_cap = doc.add_paragraph()
+                p_cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                r_cap = p_cap.add_run(payload.get("adresse", ""))
+                r_cap.font.italic = True
+                r_cap.font.size = Pt(8.5)
+                doc.add_paragraph()
+
         doc.add_heading("Observations & Travaux", level=1)
         doc.add_paragraph((payload.get("observations") or "").strip() or "Aucune observation particulière.")
 
@@ -975,6 +1118,16 @@ def build_report_pdf(payload, photos, logo_bytes=None):
     ]))
     story.append(meta_table)
     story.append(Spacer(1, 6))
+
+    if payload.get("include_map") and (payload.get("adresse") or "").strip():
+        map_bytes = build_static_map_image(payload.get("adresse"))
+        if map_bytes:
+            story.append(Paragraph("Localisation", style_h2))
+            map_img = scaled_image(map_bytes, USABLE_W, 9 * cm)
+            map_img.hAlign = "CENTER"
+            story.append(map_img)
+            story.append(Paragraph(payload.get("adresse", ""), style_caption))
+            story.append(Spacer(1, 6))
 
     story.append(Paragraph("Observations &amp; Travaux", style_h2))
     story.append(Paragraph(

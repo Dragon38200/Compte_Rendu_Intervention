@@ -50,6 +50,27 @@ label {
   margin-bottom: 4px;
 }
 
+label.checkbox-inline {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  margin-top: 8px;
+  margin-bottom: 0;
+  cursor: pointer;
+}
+label.checkbox-inline input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
 /* ---------------- Boutons ---------------- */
 .btn {
   border: none;
