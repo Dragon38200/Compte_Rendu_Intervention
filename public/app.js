@@ -597,6 +597,7 @@ document.getElementById("btnLogoSaveLibrary").addEventListener("click", async ()
 /* ===================================================================== */
 const gallery = document.getElementById("gallery");
 const photoFileInput = document.getElementById("photoFileInput");
+const photoCameraInput = document.getElementById("photoCameraInput");
 const photoZone = document.getElementById("photoZone");
 
 async function addPhotoFiles(fileList) {
@@ -622,6 +623,15 @@ photoZone.addEventListener("drop", async (e) => {
 photoFileInput.addEventListener("change", async () => {
   await addPhotoFiles(photoFileInput.files);
   photoFileInput.value = "";
+});
+// "capture=environment" fait ouvrir directement l'appareil photo sur un
+// smartphone (au lieu du sélecteur de fichiers classique) ; sur un
+// ordinateur sans webcam adaptée, le navigateur retombe simplement sur un
+// sélecteur de fichiers normal — aucune dégradation à gérer explicitement.
+document.getElementById("btnTakePhoto").addEventListener("click", () => photoCameraInput.click());
+photoCameraInput.addEventListener("change", async () => {
+  await addPhotoFiles(photoCameraInput.files);
+  photoCameraInput.value = "";
 });
 document.getElementById("btnAddText").addEventListener("click", () => {
   state.gallery.push({ type: "text", text: "" });

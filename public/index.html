@@ -209,9 +209,11 @@
       </div>
       <div class="gallery" id="gallery"></div>
       <div class="gallery-actions">
+        <button type="button" class="btn btn-ghost btn-sm" id="btnTakePhoto">📷 Prendre une photo</button>
         <button type="button" class="btn btn-ghost btn-sm" id="btnAddText">+ Ajouter un bloc de texte</button>
       </div>
       <input type="file" id="photoFileInput" accept="image/*" multiple class="hidden">
+      <input type="file" id="photoCameraInput" accept="image/*" capture="environment" class="hidden">
 
       <div class="bottom-bar">
         <span id="statusLabel" class="status-label status-info">Prêt</span>
