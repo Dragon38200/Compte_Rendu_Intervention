@@ -97,39 +97,92 @@ CREATE TABLE IF NOT EXISTS rapports (
 );
 """
 
-_postgres_rapports_table_ready = False
+_POSTGRES_SCHEMA_STATEMENTS = [
+    """
+    CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT now()
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS clients (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        nom TEXT NOT NULL
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS sites (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        site TEXT,
+        adresse TEXT,
+        contact TEXT
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS techniciens (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        nom TEXT NOT NULL
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS logos (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        nom TEXT NOT NULL,
+        url TEXT NOT NULL
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS rapports (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        nom TEXT NOT NULL,
+        client TEXT,
+        date_rapport TEXT,
+        url TEXT NOT NULL,
+        taille_octets INTEGER,
+        created_at TIMESTAMPTZ DEFAULT now()
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_clients_user ON clients(user_id);",
+    "CREATE INDEX IF NOT EXISTS idx_sites_client ON sites(client_id);",
+    "CREATE INDEX IF NOT EXISTS idx_techniciens_user ON techniciens(user_id);",
+    "CREATE INDEX IF NOT EXISTS idx_logos_user ON logos(user_id);",
+    "CREATE INDEX IF NOT EXISTS idx_rapports_user ON rapports(user_id);",
+]
+
+_postgres_schema_ready = False
+
+
+def _ensure_postgres_schema(conn):
+    """
+    Crée TOUTES les tables (users, clients, sites, techniciens, logos,
+    rapports) au premier besoin si elles n'existent pas encore, pour que
+    l'application fonctionne même sans exécuter schema.sql manuellement sur
+    la base Postgres (CREATE TABLE IF NOT EXISTS est sans danger : ne
+    touche à rien si la table existe déjà). Reçoit une connexion déjà
+    ouverte pour éviter une connexion supplémentaire à chaque requête.
+    """
+    global _postgres_schema_ready
+    if _postgres_schema_ready or not IS_POSTGRES:
+        return
+    cur = conn.cursor()
+    for statement in _POSTGRES_SCHEMA_STATEMENTS:
+        cur.execute(statement)
+    conn.commit()
+    _postgres_schema_ready = True
 
 
 def _ensure_postgres_rapports_table():
-    """
-    Crée la table `rapports` au premier besoin si elle n'existe pas encore,
-    pour que l'historique des rapports fonctionne même sans ré-exécuter
-    schema.sql manuellement sur une base déjà en place (CREATE TABLE IF NOT
-    EXISTS est sans danger : ne touche à rien si la table existe déjà).
-    """
-    global _postgres_rapports_table_ready
-    if _postgres_rapports_table_ready or not IS_POSTGRES:
-        return
-    conn = db_get_conn()
-    try:
-        cur = conn.cursor()
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS rapports (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                nom TEXT NOT NULL,
-                client TEXT,
-                date_rapport TEXT,
-                url TEXT NOT NULL,
-                taille_octets INTEGER,
-                created_at TIMESTAMPTZ DEFAULT now()
-            );
-        """)
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_rapports_user ON rapports(user_id);")
-        conn.commit()
-    finally:
-        conn.close()
-    _postgres_rapports_table_ready = True
+    """Conservé pour compatibilité : le schéma complet est maintenant créé
+    automatiquement par db_get_conn() dès la première connexion, donc cet
+    appel ne fait plus rien de spécifique à `rapports` seul."""
+    return
 
 
 def _db_adapt(sql):
@@ -153,8 +206,11 @@ def db_get_conn():
     if IS_POSTGRES:
         import psycopg2
         import psycopg2.extras
-        return psycopg2.connect(POSTGRES_DSN, sslmode="require",
+        conn = psycopg2.connect(POSTGRES_DSN, sslmode="require",
                                  cursor_factory=psycopg2.extras.RealDictCursor)
+        if not _postgres_schema_ready:
+            _ensure_postgres_schema(conn)
+        return conn
     else:
         _ensure_sqlite_schema()
         conn = sqlite3.connect(SQLITE_PATH)
