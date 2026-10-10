@@ -68,12 +68,30 @@ document.querySelectorAll(".auth-tab").forEach(tab => {
 document.getElementById("formLogin").addEventListener("submit", async (e) => {
   e.preventDefault();
   clearAuthError();
+  const identifier = document.getElementById("loginEmail").value.trim();
+  const password = document.getElementById("loginPassword").value;
+
+  // Compte admin : identifiant "admin" (pas une adresse email), redirige
+  // vers le tableau de bord d'administration plutôt que l'application.
+  if (identifier.toLowerCase() === "admin") {
+    try {
+      await api("/api/admin/login", {
+        method: "POST",
+        body: JSON.stringify({ username: identifier, password }),
+      });
+      window.location.href = "/admin.html";
+    } catch (err) {
+      showAuthError(err.message);
+    }
+    return;
+  }
+
   try {
     const user = await api("/api/auth/login", {
       method: "POST",
       body: JSON.stringify({
-        email: document.getElementById("loginEmail").value,
-        password: document.getElementById("loginPassword").value,
+        email: identifier,
+        password: password,
       }),
     });
     await enterApp(user);
