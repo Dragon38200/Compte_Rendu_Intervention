@@ -1408,7 +1408,9 @@ def me():
 @app.get("/api/clients")
 @login_required
 def list_clients():
-    clients = db_fetchall("SELECT id, nom FROM clients WHERE user_id = %s ORDER BY nom", (g.user_id,))
+    # Bibliothèque partagée entre tous les comptes : pas de filtre par
+    # utilisateur, tout le monde voit (et peut gérer) les mêmes clients.
+    clients = db_fetchall("SELECT id, nom FROM clients ORDER BY nom")
     for c in clients:
         c["sites"] = db_fetchall(
             "SELECT id, site, adresse, contact FROM sites WHERE client_id = %s ORDER BY id", (c["id"],)
@@ -1441,7 +1443,7 @@ def create_client():
 @app.put("/api/clients/<int:client_id>")
 @login_required
 def update_client(client_id):
-    owner = db_fetchone("SELECT id FROM clients WHERE id = %s AND user_id = %s", (client_id, g.user_id))
+    owner = db_fetchone("SELECT id FROM clients WHERE id = %s", (client_id,))
     if not owner:
         return jsonify({"error": "Client introuvable."}), 404
     data = request.get_json(force=True, silent=True) or {}
@@ -1455,11 +1457,7 @@ def update_client(client_id):
 @app.put("/api/sites/<int:site_id>")
 @login_required
 def update_site(site_id):
-    row = db_fetchone(
-        "SELECT sites.id FROM sites JOIN clients ON clients.id = sites.client_id "
-        "WHERE sites.id = %s AND clients.user_id = %s",
-        (site_id, g.user_id),
-    )
+    row = db_fetchone("SELECT id FROM sites WHERE id = %s", (site_id,))
     if not row:
         return jsonify({"error": "Site introuvable."}), 404
     data = request.get_json(force=True, silent=True) or {}
@@ -1474,7 +1472,7 @@ def update_site(site_id):
 @app.post("/api/clients/<int:client_id>/sites")
 @login_required
 def add_site(client_id):
-    owner = db_fetchone("SELECT id FROM clients WHERE id = %s AND user_id = %s", (client_id, g.user_id))
+    owner = db_fetchone("SELECT id FROM clients WHERE id = %s", (client_id,))
     if not owner:
         return jsonify({"error": "Client introuvable."}), 404
     data = request.get_json(force=True, silent=True) or {}
@@ -1489,7 +1487,7 @@ def add_site(client_id):
 @app.delete("/api/clients/<int:client_id>")
 @login_required
 def delete_client(client_id):
-    owner = db_fetchone("SELECT id FROM clients WHERE id = %s AND user_id = %s", (client_id, g.user_id))
+    owner = db_fetchone("SELECT id FROM clients WHERE id = %s", (client_id,))
     if not owner:
         return jsonify({"error": "Client introuvable."}), 404
     db_execute("DELETE FROM sites WHERE client_id = %s", (client_id,))
@@ -1500,11 +1498,7 @@ def delete_client(client_id):
 @app.delete("/api/sites/<int:site_id>")
 @login_required
 def delete_site(site_id):
-    row = db_fetchone(
-        "SELECT sites.id FROM sites JOIN clients ON clients.id = sites.client_id "
-        "WHERE sites.id = %s AND clients.user_id = %s",
-        (site_id, g.user_id),
-    )
+    row = db_fetchone("SELECT id FROM sites WHERE id = %s", (site_id,))
     if not row:
         return jsonify({"error": "Site introuvable."}), 404
     db_execute("DELETE FROM sites WHERE id = %s", (site_id,))
@@ -1514,9 +1508,8 @@ def delete_site(site_id):
 @app.get("/api/techniciens")
 @login_required
 def list_techniciens():
-    return jsonify(db_fetchall(
-        "SELECT id, nom FROM techniciens WHERE user_id = %s ORDER BY nom", (g.user_id,)
-    ))
+    # Bibliothèque partagée entre tous les comptes.
+    return jsonify(db_fetchall("SELECT id, nom FROM techniciens ORDER BY nom"))
 
 
 @app.post("/api/techniciens")
@@ -1535,7 +1528,7 @@ def create_technicien():
 @app.put("/api/techniciens/<int:tech_id>")
 @login_required
 def update_technicien(tech_id):
-    owner = db_fetchone("SELECT id FROM techniciens WHERE id = %s AND user_id = %s", (tech_id, g.user_id))
+    owner = db_fetchone("SELECT id FROM techniciens WHERE id = %s", (tech_id,))
     if not owner:
         return jsonify({"error": "Technicien introuvable."}), 404
     data = request.get_json(force=True, silent=True) or {}
@@ -1549,7 +1542,7 @@ def update_technicien(tech_id):
 @app.delete("/api/techniciens/<int:tech_id>")
 @login_required
 def delete_technicien(tech_id):
-    owner = db_fetchone("SELECT id FROM techniciens WHERE id = %s AND user_id = %s", (tech_id, g.user_id))
+    owner = db_fetchone("SELECT id FROM techniciens WHERE id = %s", (tech_id,))
     if not owner:
         return jsonify({"error": "Technicien introuvable."}), 404
     db_execute("DELETE FROM techniciens WHERE id = %s", (tech_id,))
@@ -1559,9 +1552,8 @@ def delete_technicien(tech_id):
 @app.get("/api/logos")
 @login_required
 def list_logos():
-    return jsonify(db_fetchall(
-        "SELECT id, nom, url FROM logos WHERE user_id = %s ORDER BY nom", (g.user_id,)
-    ))
+    # Bibliothèque partagée entre tous les comptes.
+    return jsonify(db_fetchall("SELECT id, nom, url FROM logos ORDER BY nom"))
 
 
 @app.post("/api/logos")
@@ -1582,7 +1574,7 @@ def upload_logo():
 @app.delete("/api/logos/<int:logo_id>")
 @login_required
 def delete_logo(logo_id):
-    owner = db_fetchone("SELECT id FROM logos WHERE id = %s AND user_id = %s", (logo_id, g.user_id))
+    owner = db_fetchone("SELECT id FROM logos WHERE id = %s", (logo_id,))
     if not owner:
         return jsonify({"error": "Logo introuvable."}), 404
     db_execute("DELETE FROM logos WHERE id = %s", (logo_id,))
@@ -1592,19 +1584,18 @@ def delete_logo(logo_id):
 @app.get("/api/rapports")
 @login_required
 def list_rapports():
-    _ensure_postgres_rapports_table()
+    # Historique partagé : tous les rapports générés par n'importe quel
+    # compte, visibles par tout le monde (plus seulement les siens).
     return jsonify(db_fetchall(
         "SELECT id, nom, client, date_rapport, url, taille_octets, created_at "
-        "FROM rapports WHERE user_id = %s ORDER BY created_at DESC, id DESC",
-        (g.user_id,),
+        "FROM rapports ORDER BY created_at DESC, id DESC"
     ))
 
 
 @app.delete("/api/rapports/<int:rapport_id>")
 @login_required
 def delete_rapport(rapport_id):
-    _ensure_postgres_rapports_table()
-    owner = db_fetchone("SELECT id FROM rapports WHERE id = %s AND user_id = %s", (rapport_id, g.user_id))
+    owner = db_fetchone("SELECT id FROM rapports WHERE id = %s", (rapport_id,))
     if not owner:
         return jsonify({"error": "Rapport introuvable."}), 404
     db_execute("DELETE FROM rapports WHERE id = %s", (rapport_id,))

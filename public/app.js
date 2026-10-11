@@ -1230,7 +1230,7 @@ async function renderRapportsList() {
       </div>
     `;
     row.querySelector("[data-id]").addEventListener("click", async () => {
-      const ok = await confirmDialog("Supprimer ce rapport ?", `« ${r.nom} » sera définitivement supprimé de « Mes rapports ».`);
+      const ok = await confirmDialog("Supprimer ce rapport ?", `« ${r.nom} » sera définitivement supprimé pour tout le monde.`);
       if (!ok) return;
       await api(`/api/rapports/${r.id}`, { method: "DELETE" });
       renderRapportsList();
