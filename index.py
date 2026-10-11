@@ -1860,7 +1860,11 @@ def admin_delete_user(user_id):
 
 @app.get("/api/health")
 def health():
-    return jsonify({"ok": True, "db": "postgres" if IS_POSTGRES else "sqlite (dev)"})
+    return jsonify({
+        "ok": True,
+        "db": "postgres" if IS_POSTGRES else "sqlite (dev)",
+        "blob": "vercel-blob" if BLOB_TOKEN else "local-tmp (non persistant)",
+    })
 
 
 # Point d'entrée WSGI utilisé par Vercel (runtime Python) et par un
