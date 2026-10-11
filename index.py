@@ -460,6 +460,29 @@ EMAIL_FROM = os.environ.get("EMAIL_FROM", "rapports@mouniersas.fr")
 EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "Mounier SAS — Rapports d'intervention")
 
 
+# ======================================================================
+#  Templates de rapport
+#
+#  Pour l'instant les 3 templates produisent exactement le même document
+#  (seul le titre affiché change) : c'est la structure qui est posée ici
+#  (un identifiant de template transite du formulaire jusqu'à la
+#  génération du docx/pdf), pour pouvoir ensuite faire diverger le
+#  contenu de chacun (champs différents, sections différentes) sans tout
+#  réarchitecturer.
+# ======================================================================
+REPORT_TEMPLATES = {
+    "intervention": {"label": "Rapport d'intervention", "doc_title": "RAPPORT D'INTERVENTION"},
+    "verif_armoire": {"label": "Vérification Armoire Électrique", "doc_title": "VÉRIFICATION ARMOIRE ÉLECTRIQUE"},
+    "prep_intervention": {"label": "Préparation Intervention", "doc_title": "PRÉPARATION INTERVENTION"},
+}
+DEFAULT_TEMPLATE_ID = "intervention"
+
+
+def get_template_doc_title(payload):
+    tpl = REPORT_TEMPLATES.get(payload.get("template"), REPORT_TEMPLATES[DEFAULT_TEMPLATE_ID])
+    return tpl["doc_title"]
+
+
 def send_email_with_attachment(to_email, subject, body_text, attachment_bytes, attachment_filename, attachment_mimetype):
     """
     Envoie un email avec une pièce jointe via l'API Resend. Lève une
@@ -827,7 +850,7 @@ def build_report_docx(payload, photos, logo_bytes=None):
             p.add_run().add_picture(logo_path, width=Inches(1.8))
             doc.add_paragraph()
 
-        t_title = doc.add_heading("RAPPORT D'INTERVENTION", level=0)
+        t_title = doc.add_heading(get_template_doc_title(payload), level=0)
         t_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         tbl = doc.add_table(rows=9, cols=2)
@@ -1145,7 +1168,7 @@ def build_report_pdf(payload, photos, logo_bytes=None):
         except Exception:
             pass
 
-    story.append(Paragraph("RAPPORT D'INTERVENTION", style_h1))
+    story.append(Paragraph(get_template_doc_title(payload), style_h1))
 
     meta = [
         ("N° Dossier :", payload.get("folder", "")),

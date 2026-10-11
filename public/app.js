@@ -5,6 +5,7 @@
 /* ===================================================================== */
 const state = {
   user: null,
+  template: "intervention", // "intervention" | "verif_armoire" | "prep_intervention"
   clients: [],        // [{id, nom, sites:[{id, site, adresse, contact}]}]
   techniciens: [],     // [{id, nom}]
   logos: [],           // [{id, nom, url}]
@@ -929,6 +930,7 @@ async function buildGenerateFormData() {
   }
 
   const payload = {
+    template: state.template,
     folder: document.getElementById("fFolder").value.trim(),
     date: document.getElementById("fDate").value.trim(),
     technicien: document.getElementById("fTechnicien").value.trim(),
@@ -1088,6 +1090,8 @@ document.getElementById("btnReset").addEventListener("click", async () => {
   ["fFolder", "fTechnicien", "fClient", "fSite", "fAdresse", "fContact", "fEquipement", "fSerie", "fObservations"]
     .forEach(id => { document.getElementById(id).value = ""; });
   document.getElementById("fIncludeMap").checked = false;
+  state.template = "intervention";
+  document.querySelectorAll(".template-tab").forEach(t => t.classList.toggle("active", t.dataset.template === "intervention"));
   setDefaultDateAndFilename();
 
   itemsBody.innerHTML = "";
@@ -1123,6 +1127,17 @@ function wireStaticButtons() {
   document.getElementById("modalBackdrop").addEventListener("click", closeAllModals);
   document.querySelectorAll("[data-close]").forEach(btn => btn.addEventListener("click", closeAllModals));
 }
+
+/* ===================================================================== */
+/*  Sélecteur de template de rapport                                     */
+/* ===================================================================== */
+document.querySelectorAll(".template-tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".template-tab").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+    state.template = tab.dataset.template;
+  });
+});
 
 let confirmResolver = null;
 function confirmDialog(title, message) {

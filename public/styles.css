@@ -238,6 +238,41 @@ label.checkbox-inline input[type="checkbox"] {
 .topbar-right { display: flex; align-items: center; gap: 12px; flex: none; }
 .user-email { color: var(--text-muted); font-size: 12px; }
 
+.template-bar {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 14px 18px 0;
+}
+.template-tabs {
+  display: flex;
+  gap: 6px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 4px;
+}
+.template-tab {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  padding: 10px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 12.5px;
+  text-align: center;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.template-tab:hover { color: var(--text); }
+.template-tab.active {
+  background: linear-gradient(135deg, var(--accent-2), #4338CA);
+  color: white;
+}
+@media (max-width: 700px) {
+  .template-tabs { flex-direction: column; }
+}
+
 .layout {
   display: grid;
   grid-template-columns: 1fr 1fr;
