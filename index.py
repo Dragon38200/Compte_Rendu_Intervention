@@ -446,6 +446,60 @@ def blob_read_local(key: str):
 
 
 # ======================================================================
+#  Envoi d'email (Resend) — pour envoyer un rapport généré directement
+#  par email depuis l'application, en pièce jointe.
+#
+#  RESEND_API_KEY : clé API du compte Resend (Project Settings ->
+#  Environment Variables sur Vercel). Sans elle, l'envoi est désactivé et
+#  l'API renvoie une erreur claire plutôt que d'échouer silencieusement.
+#  EMAIL_FROM : adresse d'expéditeur, sur un domaine vérifié dans Resend
+#  (par défaut rapports@mouniersas.fr).
+# ======================================================================
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
+EMAIL_FROM = os.environ.get("EMAIL_FROM", "rapports@mouniersas.fr")
+EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "Mounier SAS — Rapports d'intervention")
+
+
+def send_email_with_attachment(to_email, subject, body_text, attachment_bytes, attachment_filename, attachment_mimetype):
+    """
+    Envoie un email avec une pièce jointe via l'API Resend. Lève une
+    exception avec un message clair en cas de problème (clé manquante,
+    domaine non vérifié, adresse invalide, etc.), à charge de l'appelant
+    de la transformer en réponse HTTP adaptée.
+    """
+    if not RESEND_API_KEY:
+        raise RuntimeError(
+            "L'envoi par email n'est pas configuré sur le serveur "
+            "(variable d'environnement RESEND_API_KEY manquante)."
+        )
+
+    resp = requests.post(
+        "https://api.resend.com/emails",
+        headers={
+            "Authorization": f"Bearer {RESEND_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "from": f"{EMAIL_FROM_NAME} <{EMAIL_FROM}>",
+            "to": [to_email],
+            "subject": subject,
+            "html": body_text.replace("\n", "<br>"),
+            "attachments": [{
+                "filename": attachment_filename,
+                "content": base64.b64encode(attachment_bytes).decode("ascii"),
+            }],
+        },
+        timeout=30,
+    )
+    if not resp.ok:
+        try:
+            detail = resp.json().get("message", resp.text)
+        except Exception:
+            detail = resp.text
+        raise RuntimeError(f"Resend a refusé l'envoi ({resp.status_code}) : {detail}")
+
+
+# ======================================================================
 #  Modèle Word (fond de page Mounier), embarqué en base64 pour ne
 #  dépendre d'aucun fichier voisin sur le disque en production.
 # ======================================================================
@@ -1630,6 +1684,84 @@ def generate_report_pdf():
         mimetype="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@app.post("/api/send-report-email")
+@login_required
+def send_report_email():
+    raw_payload = request.form.get("payload")
+    if not raw_payload:
+        return jsonify({"error": "payload manquant"}), 400
+    try:
+        payload = json.loads(raw_payload)
+    except ValueError:
+        return jsonify({"error": "payload JSON invalide"}), 400
+
+    email_to = (request.form.get("email_to") or "").strip()
+    if not email_to or "@" not in email_to:
+        return jsonify({"error": "Adresse email du destinataire manquante ou invalide."}), 400
+
+    email_format = (request.form.get("email_format") or "docx").strip().lower()
+    if email_format not in ("docx", "pdf"):
+        email_format = "docx"
+
+    photos = []
+    i = 0
+    while True:
+        f = request.files.get(f"photo_{i}")
+        if f is None:
+            break
+        photos.append(f.read())
+        i += 1
+
+    logo_file = request.files.get("logo")
+    logo_bytes = logo_file.read() if logo_file else None
+
+    filename = (payload.get("filename") or "rapport").strip() or "rapport"
+    try:
+        if email_format == "pdf":
+            file_bytes = build_report_pdf(payload, photos, logo_bytes=logo_bytes)
+            mimetype = "application/pdf"
+            if not filename.lower().endswith(".pdf"):
+                filename += ".pdf"
+        else:
+            file_bytes = build_report_docx(payload, photos, logo_bytes=logo_bytes)
+            mimetype = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            if not filename.lower().endswith(".docx"):
+                filename += ".docx"
+    except Exception as e:
+        return jsonify({"error": f"Échec de la génération du rapport : {e}"}), 500
+
+    client = (payload.get("client") or "").strip()
+    subject_parts = ["Rapport d'intervention Mounier SAS"]
+    if client:
+        subject_parts.append(f"— {client}")
+    subject = " ".join(subject_parts)
+
+    body_lines = ["Bonjour,", "", "Veuillez trouver ci-joint le rapport d'intervention."]
+    if client:
+        body_lines.append(f"Client : {client}")
+    if (payload.get("site") or "").strip():
+        body_lines.append(f"Site : {payload.get('site').strip()}")
+    if (payload.get("date") or "").strip():
+        body_lines.append(f"Date : {payload.get('date').strip()}")
+    body_lines += ["", "Cordialement,", "Mounier SAS"]
+    body_text = "\n".join(body_lines)
+
+    try:
+        send_email_with_attachment(email_to, subject, body_text, file_bytes, filename, mimetype)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+    # Sauvegarde best-effort dans « Mes rapports » (docx uniquement, comme
+    # pour /api/generate), sans bloquer la confirmation d'envoi si ça échoue.
+    if email_format == "docx":
+        try:
+            save_generated_report(g.user_id, filename, payload, file_bytes)
+        except Exception as e:
+            print(f"Avertissement : sauvegarde dans « Mes rapports » ignorée ({e})")
+
+    return jsonify({"ok": True, "sent_to": email_to})
 
 
 @app.post("/api/admin/login")

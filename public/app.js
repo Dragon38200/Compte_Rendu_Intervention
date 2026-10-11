@@ -1018,6 +1018,64 @@ document.getElementById("btnGeneratePdf").addEventListener("click", () => {
 });
 
 /* ===================================================================== */
+/*  Envoi du rapport par email                                           */
+/* ===================================================================== */
+document.getElementById("btnEmailReport").addEventListener("click", () => {
+  document.getElementById("emailError").classList.add("hidden");
+  const emailToInput = document.getElementById("emailTo");
+  if (!emailToInput.value) {
+    emailToInput.value = state.user?.email || "";
+  }
+  openModal("modalEmail");
+});
+
+document.getElementById("btnEmailSend").addEventListener("click", async () => {
+  const emailError = document.getElementById("emailError");
+  emailError.classList.add("hidden");
+
+  const emailTo = document.getElementById("emailTo").value.trim();
+  if (!emailTo || !emailTo.includes("@")) {
+    emailError.textContent = "Merci de saisir une adresse email valide.";
+    emailError.classList.remove("hidden");
+    return;
+  }
+  const emailFormat = document.getElementById("emailFormat").value;
+
+  const btn = document.getElementById("btnEmailSend");
+  btn.disabled = true;
+  btn.textContent = "Envoi en cours…";
+  try {
+    const { fd, estimatedBytes } = await buildGenerateFormData();
+
+    const MAX_BYTES = 4.3 * 1024 * 1024;
+    if (estimatedBytes > MAX_BYTES) {
+      throw new Error(
+        `Le rapport est trop volumineux pour être envoyé (≈${(estimatedBytes / 1024 / 1024).toFixed(1)} Mo, `
+        + `limite 4,5 Mo). Retirez quelques photos ou générez le rapport en plusieurs fois.`
+      );
+    }
+
+    fd.append("email_to", emailTo);
+    fd.append("email_format", emailFormat);
+
+    const resp = await fetch("/api/send-report-email", { method: "POST", credentials: "same-origin", body: fd });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      throw new Error(data.error || `Erreur serveur (${resp.status})`);
+    }
+
+    closeAllModals();
+    setStatus(`Rapport envoyé par email à ${data.sent_to}`, "success");
+  } catch (err) {
+    emailError.textContent = err.message;
+    emailError.classList.remove("hidden");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Envoyer";
+  }
+});
+
+/* ===================================================================== */
 /*  Réinitialisation du formulaire                                       */
 /* ===================================================================== */
 document.getElementById("btnReset").addEventListener("click", async () => {
