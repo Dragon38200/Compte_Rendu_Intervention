@@ -463,3 +463,88 @@ label.checkbox-inline input[type="checkbox"] {
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.3); border-radius: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------------- Grille de vérification armoire électrique ---------------- */
+.armoire-title { display: flex; align-items: center; gap: 8px; }
+.armoire-title-icon { font-size: 15px; filter: drop-shadow(0 0 6px rgba(56,189,248,0.5)); }
+
+.armoire-meta { margin-top: 2px; }
+
+.armoire-checklist { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+
+.armoire-section {
+  border: 1px solid var(--border-soft); border-radius: 10px; overflow: hidden;
+  background: rgba(15, 23, 42, 0.45);
+}
+.armoire-section + .armoire-section { margin-top: 0; }
+.armoire-section-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 11px 14px; cursor: pointer; list-style: none; user-select: none;
+  background: linear-gradient(135deg, rgba(99,102,241,0.16), rgba(56,189,248,0.08));
+}
+.armoire-section-header::-webkit-details-marker { display: none; }
+.armoire-section-header-left { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.armoire-section-icon { font-size: 15px; flex: none; }
+.armoire-section-title {
+  color: #BAE6FD; font-size: 12px; font-weight: 800; letter-spacing: 0.3px;
+  text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.armoire-section-sub { color: var(--text-muted); font-size: 10px; font-weight: 500; margin-top: 1px; }
+.armoire-section-chevron { color: var(--text-muted); font-size: 11px; transition: transform 0.15s ease; flex: none; }
+.armoire-section[open] .armoire-section-chevron { transform: rotate(90deg); }
+.armoire-section-count {
+  flex: none; font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 20px;
+  background: rgba(148,163,184,0.15); color: var(--text-muted);
+}
+.armoire-section-count.has-nok { background: rgba(225,29,72,0.2); color: #FCA5A5; }
+.armoire-section-count.complete:not(.has-nok) { background: rgba(16,185,129,0.18); color: #6EE7B7; }
+
+.armoire-section-body { padding: 4px 14px 12px; display: flex; flex-direction: column; }
+
+.armoire-item {
+  display: flex; align-items: flex-start; gap: 10px; padding: 10px 0;
+  border-bottom: 1px solid rgba(148,163,184,0.1);
+}
+.armoire-item:last-child { border-bottom: none; }
+.armoire-item-label { flex: 1; min-width: 0; font-size: 12px; color: #E2E8F0; line-height: 1.45; padding-top: 6px; }
+.armoire-reg-badge {
+  display: inline-block; margin-left: 6px; vertical-align: 2px;
+  font-size: 8.5px; font-weight: 800; letter-spacing: 0.3px; text-transform: uppercase;
+  color: #FDE68A; background: rgba(251, 191, 36, 0.14); border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: 5px; padding: 1.5px 5px;
+}
+.armoire-item-controls { flex: none; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+.armoire-comment {
+  width: 220px; font-size: 11px; padding: 6px 8px;
+}
+@media (max-width: 700px) {
+  .armoire-item { flex-direction: column; }
+  .armoire-item-controls { align-items: stretch; width: 100%; }
+  .armoire-comment { width: 100%; }
+}
+
+.armoire-item-text .armoire-comment-full { width: 100%; }
+
+/* Contrôle segmenté OK / NOK / S.O. */
+.seg-control {
+  display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  flex: none;
+}
+.seg-btn {
+  background: rgba(148,163,184,0.08); border: none; color: var(--text-muted);
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.2px; padding: 6px 10px; cursor: pointer;
+  border-right: 1px solid var(--border); transition: background-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.seg-btn:last-child { border-right: none; }
+.seg-btn:hover { color: var(--text); }
+.seg-btn.seg-ok.active { background: rgba(16,185,129,0.85); color: #06211A; }
+.seg-btn.seg-nok.active { background: rgba(225,29,72,0.85); color: #2B0609; }
+.seg-btn.seg-so.active { background: rgba(148,163,184,0.55); color: #0B0F19; }
+
+.seg-control-result { width: 100%; }
+.seg-control-result .seg-btn { flex: 1; padding: 11px 10px; font-size: 12.5px; text-align: center; }
+
+.armoire-result { margin-top: 16px; }
+
+.armoire-item.has-nok .armoire-item-label { color: #FCA5A5; }

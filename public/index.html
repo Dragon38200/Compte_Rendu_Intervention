@@ -181,17 +181,67 @@
         <div class="emoji-bar" data-target="fObservations"></div>
       </div>
 
-      <h2 class="panel-title">2. Matériel &amp; Prestations</h2>
-      <table class="items-table" id="itemsTable">
-        <thead>
-          <tr><th>Désignation</th><th>Qté</th><th>P.U. HT (€)</th><th></th></tr>
-        </thead>
-        <tbody id="itemsBody"></tbody>
-      </table>
-      <div class="items-actions">
-        <button type="button" class="btn btn-ghost btn-sm" id="btnAddRow">+ Ligne</button>
-        <button type="button" class="btn btn-ghost btn-sm" id="btnDelRow">Supprimer la ligne sélectionnée</button>
-        <span class="items-total">Total HT : <strong id="itemsTotal">0.00 €</strong></span>
+      <div class="tpl-panel tpl-intervention tpl-prep_intervention">
+        <h2 class="panel-title">2. Matériel &amp; Prestations</h2>
+        <table class="items-table" id="itemsTable">
+          <thead>
+            <tr><th>Désignation</th><th>Qté</th><th>P.U. HT (€)</th><th></th></tr>
+          </thead>
+          <tbody id="itemsBody"></tbody>
+        </table>
+        <div class="items-actions">
+          <button type="button" class="btn btn-ghost btn-sm" id="btnAddRow">+ Ligne</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="btnDelRow">Supprimer la ligne sélectionnée</button>
+          <span class="items-total">Total HT : <strong id="itemsTotal">0.00 €</strong></span>
+        </div>
+      </div>
+
+      <!-- ---------- Grille de vérification armoire électrique ---------- -->
+      <div class="tpl-panel tpl-verif_armoire hidden">
+        <h2 class="panel-title armoire-title">
+          <span class="armoire-title-icon">🗄️</span> 2. Grille de vérification — Fiche de contrôle armoire V2024
+        </h2>
+
+        <div class="armoire-meta grid-2">
+          <div class="field">
+            <label>N° D'AFFAIRE</label>
+            <input type="text" id="aAffaire" placeholder="Ex: AFF-2026-042">
+          </div>
+          <div class="field">
+            <label>IDENTIFICATION DE L'ARMOIRE</label>
+            <input type="text" id="aIdentification" placeholder="Repère / désignation de l'armoire">
+          </div>
+          <div class="field">
+            <label>PLAN N°</label>
+            <input type="text" id="aPlan" placeholder="Référence du plan">
+          </div>
+          <div class="field">
+            <label>INDICE</label>
+            <input type="text" id="aIndice" placeholder="Indice du plan">
+          </div>
+          <div class="field">
+            <label>NOM DU CÂBLEUR</label>
+            <input type="text" id="aCableur" placeholder="Nom du câbleur">
+          </div>
+          <div class="field">
+            <label>NOM DU CONTRÔLEUR</label>
+            <input type="text" id="aControleur" placeholder="Nom du contrôleur">
+          </div>
+        </div>
+        <label class="checkbox-inline">
+          <input type="checkbox" id="aReglementaire" checked>
+          Contrôle réglementaire
+        </label>
+
+        <div class="armoire-checklist" id="armoireChecklist"></div>
+
+        <div class="armoire-result">
+          <label>RÉSULTAT GLOBAL DU CONTRÔLE</label>
+          <div class="seg-control seg-control-result" id="armoireGlobalResult">
+            <button type="button" class="seg-btn seg-ok" data-value="CONFORME">✓ Conforme</button>
+            <button type="button" class="seg-btn seg-nok" data-value="NON_CONFORME">✕ Non conforme</button>
+          </div>
+        </div>
       </div>
     </section>
 

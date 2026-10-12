@@ -258,6 +258,238 @@ document.getElementById("btnDelRow").addEventListener("click", () => {
 });
 
 /* ===================================================================== */
+/*  Grille de vérification "Vérification Armoire Électrique"             */
+/*  (Fiche de contrôle armoire V2024 — 3 volets repris du document       */
+/*   fourni par le client : ASPECT EXTÉRIEUR, ÉQUIPEMENTS INTÉRIEURS,    */
+/*   ESSAIS FONCTIONNELS)                                                */
+/* ===================================================================== */
+const ARMOIRE_CHECKLIST = [
+  {
+    id: "exterieur",
+    icon: "🗄️",
+    title: "1. Aspect extérieur – Enveloppe",
+    items: [
+      { id: "ext_1", reg: false, label: "Vérification du bon état physique du coffret ou de l'armoire (rayures, chocs…)" },
+      { id: "ext_2", reg: false, label: "Vérification du bon état du matériel installé" },
+      { id: "ext_3", reg: true, label: "Vérification de la bonne fermeture du coffret ou de l'armoire. Si demande spécifique du client, vérifier le type de clé / fermeture." },
+      { id: "ext_4", reg: false, label: "Vérification de la fourniture de la clé ou de l'objet de déverrouillage de l'armoire" },
+      { id: "ext_5", reg: false, label: "Vérification de l'étanchéité « relative » du coffret ou de l'armoire. Présence de plastron et autres capuchons si nécessaire." },
+      { id: "ext_6", reg: false, label: "Vérification présence et bon état des presse-étoupes" },
+      { id: "ext_7", reg: true, label: "Présence de la signalisation électrique sur la face avant du coffret" },
+      { id: "ext_8", reg: true, label: "Présence et fonctionnement mécanique du sectionneur (si nécessaire)" },
+      { id: "ext_9", reg: true, label: "Présence des repères voyants et boutonnerie 22,5 (repère 178 sur Cembre Genius)" },
+      { id: "ext_10", reg: true, label: "Si présence d'un arrêt d'urgence, présence de la collerette spécifique" },
+    ],
+  },
+  {
+    id: "interieur",
+    icon: "🔌",
+    title: "2. Équipements intérieurs de l'armoire",
+    items: [
+      { id: "int_1", reg: false, label: "Vérification du bon état du matériel installé" },
+      { id: "int_2", reg: false, label: "Vérification de la présence de tous les capots de goulottes. Bon état et bonne fixation des goulottes." },
+      { id: "int_3", reg: false, label: "Vérification de la bonne fixation des rails et des équipements" },
+      { id: "int_4", reg: true, label: "Pas de fils volants dans l'armoire !" },
+      { id: "int_5", reg: true, label: "Si présence d'équipement ATEX – SI : respect des normes de montage Sécurité Intrinsèque (goulotte bleue + distance de sécurité des équipements « normaux »)" },
+      { id: "int_6", reg: false, label: "Présence d'un porte-plans (si nécessaire)" },
+      { id: "int_7", reg: true, label: "Présence des schémas électriques dans l'armoire" },
+      { id: "int_8", reg: true, label: "Vérification de la mise à la terre des portes si présence d'équipements électriques" },
+      { id: "int_9", reg: true, label: "Vérification de la présence et de l'état du barreau de terre. Serrage des connecteurs de terre (vis M5 ou M6)." },
+      { id: "int_10", reg: false, label: "Identification de chaque fil câblé (crayon ou stabilo sur plans)" },
+      { id: "int_11", reg: false, label: "Serrage efficace des fils et des cosses" },
+      { id: "int_12", reg: false, label: "Contrôle du sertissage des embouts de câblage (par prélèvement) — pince et embouts adaptés à la section (cf. couleurs des embouts)" },
+      { id: "int_13", reg: false, label: "Contrôle du sertissage des cosses (par prélèvement) — pince et cosses adaptées à la section (cf. couleurs des cosses)" },
+      { id: "int_14", reg: false, label: "Un fil par borne (sauf indication du plan)" },
+      { id: "int_15", reg: false, label: "Vérification de la couleur des fils, suivant standard client ou à défaut standard Mounier" },
+      { id: "int_16", reg: false, label: "Vérification de la nature des fils suivant standard client ou à défaut standard Mounier (attention : CERN = sans halogène)" },
+      { id: "int_17", reg: true, label: "Repérage des appareils sur l'appareil ou sur goulotte — repères conformes au plan et lisibles" },
+      { id: "int_18", reg: false, label: "Repérage des fils et des câbles (si nécessaire) — repère 503 Cembre dans bague adaptée à la taille du fil, conforme au plan et lisible" },
+      { id: "int_19", reg: false, label: "Repérage des borniers et des n° de bornes (bornes Phoenix, repère n°35 Cembre) — conforme au plan et lisible" },
+      { id: "int_20", reg: true, label: "Sur les alimentations et les transfos : raccordement du potentiel de référence à la terre + carcasse acier" },
+      { id: "int_21", reg: false, label: "Matériel employé estampillé CE" },
+      { id: "int_22", reg: false, label: "Vérification de la nomenclature par rapport au cahier des charges" },
+      { id: "int_23", reg: false, label: "Si porte-fusible, vérifier la présence des fusibles conformément au schéma électrique" },
+      { id: "int_24", reg: false, label: "Autres contrôles spécifiques clients", type: "text" },
+    ],
+  },
+  {
+    id: "essais",
+    icon: "⚡",
+    title: "3. Essais fonctionnels",
+    note: "Les essais fonctionnels doivent être réalisés uniquement par du personnel formé et habilité (habilitation électrique). L'identification des tensions de commande et de puissance est nécessaire avant toute mise sous tension de l'armoire.",
+    items: [
+      { id: "ess_1", reg: false, label: "Vérification des polarités et des tensions par contrôleur universel (avant mise sous tension)" },
+      { id: "ess_2", reg: true, label: "Validation du fonctionnement du voyant « sous tension » et/ou tri-LED si présent" },
+      { id: "ess_3", reg: true, label: "Validation du déclenchement des inter-différentiels — appui sur les boutons « Test » des équipements concernés (utiliser si besoin l'appareil de déclenchement des différentiels)" },
+      { id: "ess_4", reg: false, label: "Validation du fonctionnement des différentes alimentations" },
+      { id: "ess_5", reg: false, label: "Vérification des tensions sur les répartiteurs" },
+      { id: "ess_6", reg: false, label: "Validation du fonctionnement de la ventilation et du thermostat (si présent) — faire déclencher le ou les thermostats" },
+      { id: "ess_7", reg: false, label: "Isolement : validation de l'isolement diélectrique (essais réservés au personnel qualifié — voir fiche d'essais dédiée)" },
+    ],
+  },
+];
+
+function renderArmoireChecklist() {
+  const container = document.getElementById("armoireChecklist");
+  container.innerHTML = "";
+  ARMOIRE_CHECKLIST.forEach(section => {
+    const details = document.createElement("details");
+    details.className = "armoire-section";
+    details.open = true;
+    details.dataset.sectionId = section.id;
+
+    const summary = document.createElement("summary");
+    summary.className = "armoire-section-header";
+    summary.innerHTML = `
+      <span class="armoire-section-header-left">
+        <span class="armoire-section-chevron">▶</span>
+        <span class="armoire-section-icon">${section.icon}</span>
+        <span>
+          <span class="armoire-section-title">${section.title}</span>
+          ${section.note ? `<div class="armoire-section-sub">${section.note}</div>` : ""}
+        </span>
+      </span>
+      <span class="armoire-section-count" data-count-for="${section.id}">0 / ${section.items.filter(it => it.type !== "text").length}</span>
+    `;
+    details.appendChild(summary);
+
+    const body = document.createElement("div");
+    body.className = "armoire-section-body";
+
+    section.items.forEach(item => {
+      const row = document.createElement("div");
+      row.className = "armoire-item" + (item.type === "text" ? " armoire-item-text" : "");
+      row.dataset.itemId = item.id;
+
+      if (item.type === "text") {
+        row.innerHTML = `
+          <div class="armoire-item-label">${item.label}</div>
+        `;
+        const wrap = document.createElement("div");
+        wrap.style.width = "100%";
+        const input = document.createElement("input");
+        input.type = "text";
+        input.className = "armoire-comment armoire-comment-full";
+        input.placeholder = "Préciser si nécessaire…";
+        row.appendChild(input);
+      } else {
+        const regBadge = item.reg ? `<span class="armoire-reg-badge">Réglementaire</span>` : "";
+        row.innerHTML = `
+          <div class="armoire-item-label">${item.label}${regBadge}</div>
+        `;
+        const controls = document.createElement("div");
+        controls.className = "armoire-item-controls";
+        const seg = document.createElement("div");
+        seg.className = "seg-control";
+        seg.innerHTML = `
+          <button type="button" class="seg-btn seg-ok" data-value="OK">OK</button>
+          <button type="button" class="seg-btn seg-nok" data-value="NOK">NOK</button>
+          <button type="button" class="seg-btn seg-so" data-value="SO">S.O.</button>
+        `;
+        seg.querySelectorAll(".seg-btn").forEach(btn => {
+          btn.addEventListener("click", () => {
+            const already = btn.classList.contains("active");
+            seg.querySelectorAll(".seg-btn").forEach(b => b.classList.remove("active"));
+            if (!already) btn.classList.add("active");
+            row.classList.toggle("has-nok", !already && btn.dataset.value === "NOK");
+            updateArmoireSectionCount(section.id);
+          });
+        });
+        const comment = document.createElement("input");
+        comment.type = "text";
+        comment.className = "armoire-comment";
+        comment.placeholder = "Modification / problème constaté…";
+
+        controls.appendChild(seg);
+        controls.appendChild(comment);
+        row.appendChild(controls);
+      }
+      body.appendChild(row);
+    });
+
+    details.appendChild(body);
+    container.appendChild(details);
+  });
+}
+
+function updateArmoireSectionCount(sectionId) {
+  const section = ARMOIRE_CHECKLIST.find(s => s.id === sectionId);
+  const details = document.querySelector(`.armoire-section[data-section-id="${sectionId}"]`);
+  if (!section || !details) return;
+  const checkableItems = section.items.filter(it => it.type !== "text");
+  let answered = 0, hasNok = false;
+  checkableItems.forEach(item => {
+    const row = details.querySelector(`.armoire-item[data-item-id="${item.id}"]`);
+    const activeBtn = row?.querySelector(".seg-btn.active");
+    if (activeBtn) {
+      answered++;
+      if (activeBtn.dataset.value === "NOK") hasNok = true;
+    }
+  });
+  const badge = details.querySelector(`.armoire-section-count`);
+  badge.textContent = `${answered} / ${checkableItems.length}`;
+  badge.classList.toggle("has-nok", hasNok);
+  badge.classList.toggle("complete", answered === checkableItems.length);
+}
+
+document.querySelectorAll("#armoireGlobalResult .seg-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const already = btn.classList.contains("active");
+    document.querySelectorAll("#armoireGlobalResult .seg-btn").forEach(b => b.classList.remove("active"));
+    if (!already) btn.classList.add("active");
+  });
+});
+
+function getArmoirePayload() {
+  const sections = ARMOIRE_CHECKLIST.map(section => ({
+    id: section.id,
+    title: section.title,
+    note: section.note || "",
+    items: section.items.map(item => {
+      const row = document.querySelector(`.armoire-item[data-item-id="${item.id}"]`);
+      if (item.type === "text") {
+        return {
+          id: item.id, label: item.label, type: "text", reg: false,
+          comment: row?.querySelector(".armoire-comment")?.value.trim() || "",
+        };
+      }
+      const activeBtn = row?.querySelector(".seg-btn.active");
+      return {
+        id: item.id, label: item.label, type: "check", reg: !!item.reg,
+        value: activeBtn ? activeBtn.dataset.value : "",
+        comment: row?.querySelector(".armoire-comment")?.value.trim() || "",
+      };
+    }),
+  }));
+  const globalBtn = document.querySelector("#armoireGlobalResult .seg-btn.active");
+  return {
+    affaire: document.getElementById("aAffaire").value.trim(),
+    identification: document.getElementById("aIdentification").value.trim(),
+    plan: document.getElementById("aPlan").value.trim(),
+    indice: document.getElementById("aIndice").value.trim(),
+    cableur: document.getElementById("aCableur").value.trim(),
+    controleur: document.getElementById("aControleur").value.trim(),
+    reglementaire: document.getElementById("aReglementaire").checked,
+    global_result: globalBtn ? globalBtn.dataset.value : "",
+    sections,
+  };
+}
+
+function resetArmoireChecklist() {
+  ["aAffaire", "aIdentification", "aPlan", "aIndice", "aCableur", "aControleur"].forEach(id => {
+    document.getElementById(id).value = "";
+  });
+  document.getElementById("aReglementaire").checked = true;
+  document.querySelectorAll(".armoire-item .seg-btn.active").forEach(b => b.classList.remove("active"));
+  document.querySelectorAll(".armoire-item").forEach(r => r.classList.remove("has-nok"));
+  document.querySelectorAll(".armoire-comment").forEach(i => { i.value = ""; });
+  document.querySelectorAll("#armoireGlobalResult .seg-btn.active").forEach(b => b.classList.remove("active"));
+  ARMOIRE_CHECKLIST.forEach(section => updateArmoireSectionCount(section.id));
+}
+
+renderArmoireChecklist();
+
+/* ===================================================================== */
 /*  Bibliothèque clients (client + sites)                                */
 /* ===================================================================== */
 async function loadClients() {
@@ -943,7 +1175,8 @@ async function buildGenerateFormData() {
     serie: document.getElementById("fSerie").value.trim(),
     observations: document.getElementById("fObservations").value.trim(),
     filename: document.getElementById("fFilename").value.trim() || "rapport",
-    items: getItemsPayload(),
+    items: state.template === "verif_armoire" ? [] : getItemsPayload(),
+    armoire: state.template === "verif_armoire" ? getArmoirePayload() : null,
     content,
     signatures: {
       technicien: { nom: state.signatures.technicien.nom || document.getElementById("fTechnicien").value.trim(), image: state.signatures.technicien.dataUrl },
@@ -1098,6 +1331,9 @@ document.getElementById("btnReset").addEventListener("click", async () => {
   selectedRow = null;
   buildItemsTableEmptyRow();
 
+  resetArmoireChecklist();
+  applyTemplateVisibility("intervention");
+
   state.gallery = [];
   renderGallery();
 
@@ -1131,13 +1367,21 @@ function wireStaticButtons() {
 /* ===================================================================== */
 /*  Sélecteur de template de rapport                                     */
 /* ===================================================================== */
+function applyTemplateVisibility(template) {
+  document.querySelectorAll(".tpl-panel").forEach(panel => {
+    panel.classList.toggle("hidden", !panel.classList.contains(`tpl-${template}`));
+  });
+}
+
 document.querySelectorAll(".template-tab").forEach(tab => {
   tab.addEventListener("click", () => {
     document.querySelectorAll(".template-tab").forEach(t => t.classList.remove("active"));
     tab.classList.add("active");
     state.template = tab.dataset.template;
+    applyTemplateVisibility(state.template);
   });
 });
+applyTemplateVisibility(state.template);
 
 let confirmResolver = null;
 function confirmDialog(title, message) {

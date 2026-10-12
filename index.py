@@ -36,7 +36,7 @@ import jwt
 import requests
 from werkzeug.security import generate_password_hash, check_password_hash
 from docx import Document
-from docx.shared import Inches, Pt
+from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ROW_HEIGHT_RULE
 from docx.oxml import OxmlElement
@@ -539,6 +539,102 @@ def _get_template_bytes():
 
 
 # ======================================================================
+#  Grille de vérification "Vérification Armoire Électrique"
+#  (Fiche de contrôle armoire V2024) — rendu générique : le contenu de la
+#  grille (libellés, sections) est entièrement piloté par le frontend
+#  (public/app.js, ARMOIRE_CHECKLIST), le backend se contente de mettre
+#  en forme ce que le payload["armoire"] contient.
+# ======================================================================
+_ARMOIRE_RESULT_LABELS = {"OK": "OK", "NOK": "NOK", "SO": "S.O."}
+
+
+def _render_armoire_section_docx(doc, armoire):
+    doc.add_heading("Grille de vérification — Fiche de contrôle armoire V2024", level=1)
+
+    meta = [
+        ("N° d'Affaire :", armoire.get("affaire", "")),
+        ("Identification de l'armoire :", armoire.get("identification", "")),
+        ("Plan n° :", armoire.get("plan", "")),
+        ("Indice :", armoire.get("indice", "")),
+        ("Nom du câbleur :", armoire.get("cableur", "")),
+        ("Nom du contrôleur :", armoire.get("controleur", "")),
+        ("Type de contrôle :", "Réglementaire" if armoire.get("reglementaire") else "Non réglementaire"),
+    ]
+    tbl = doc.add_table(rows=len(meta), cols=2)
+    tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+    tbl.style = 'Table Grid'
+    for i, (k, v) in enumerate(meta):
+        tbl.rows[i].cells[0].text = k
+        tbl.rows[i].cells[1].text = v or "N/C"
+        tbl.rows[i].cells[0].paragraphs[0].runs[0].font.bold = True
+    doc.add_paragraph()
+
+    for section in armoire.get("sections") or []:
+        doc.add_heading(section.get("title", ""), level=1)
+        if section.get("note"):
+            p_note = doc.add_paragraph()
+            r_note = p_note.add_run(section["note"])
+            r_note.font.italic = True
+            r_note.font.size = Pt(8.5)
+
+        check_items = [it for it in (section.get("items") or []) if it.get("type") != "text"]
+        text_items = [it for it in (section.get("items") or []) if it.get("type") == "text"]
+
+        if check_items:
+            tbl_chk = doc.add_table(rows=len(check_items) + 1, cols=3)
+            tbl_chk.alignment = WD_TABLE_ALIGNMENT.CENTER
+            tbl_chk.style = 'Table Grid'
+            headers = ["Point de contrôle", "Résultat", "Modification / problème constaté"]
+            for i, h in enumerate(headers):
+                cell = tbl_chk.rows[0].cells[i]
+                cell.text = h
+                cell.paragraphs[0].runs[0].font.bold = True
+            tbl_chk.columns[0].width = Inches(3.6)
+            tbl_chk.columns[1].width = Inches(0.9)
+            tbl_chk.columns[2].width = Inches(2.3)
+
+            for r, item in enumerate(check_items, start=1):
+                label = item.get("label", "")
+                if item.get("reg"):
+                    label += "  [Réglementaire]"
+                tbl_chk.rows[r].cells[0].text = label
+
+                value = item.get("value", "")
+                cell_val = tbl_chk.rows[r].cells[1]
+                cell_val.text = _ARMOIRE_RESULT_LABELS.get(value, "—")
+                run_val = cell_val.paragraphs[0].runs[0]
+                run_val.font.bold = True
+                if value == "NOK":
+                    run_val.font.color.rgb = RGBColor(0xE1, 0x1D, 0x48)
+                elif value == "OK":
+                    run_val.font.color.rgb = RGBColor(0x10, 0x98, 0x81)
+
+                tbl_chk.rows[r].cells[2].text = item.get("comment", "") or ""
+            doc.add_paragraph()
+
+        for item in text_items:
+            p_text = doc.add_paragraph()
+            r_label = p_text.add_run(f"{item.get('label', '')} : ")
+            r_label.font.bold = True
+            p_text.add_run(item.get("comment", "") or "—")
+            doc.add_paragraph()
+
+    global_result = armoire.get("global_result")
+    if global_result:
+        p_result = doc.add_paragraph()
+        p_result.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r_result = p_result.add_run(
+            "✓ CONFORME" if global_result == "CONFORME" else "✕ NON CONFORME"
+        )
+        r_result.font.bold = True
+        r_result.font.size = Pt(13)
+        r_result.font.color.rgb = (
+            RGBColor(0x10, 0x98, 0x81) if global_result == "CONFORME" else RGBColor(0xE1, 0x1D, 0x48)
+        )
+    doc.add_paragraph()
+
+
+# ======================================================================
 #  Génération du rapport .docx (logique identique à l'application de
 #  bureau, voir essais_pyqt6_secours.py)
 # ======================================================================
@@ -899,8 +995,12 @@ def build_report_docx(payload, photos, logo_bytes=None):
         doc.add_heading("Observations & Travaux", level=1)
         doc.add_paragraph((payload.get("observations") or "").strip() or "Aucune observation particulière.")
 
+        armoire = payload.get("armoire") if payload.get("template") == "verif_armoire" else None
+        if armoire:
+            _render_armoire_section_docx(doc, armoire)
+
         items = payload.get("items") or []
-        if items:
+        if items and not armoire:
             doc.add_heading("Matériel & Prestations", level=1)
             tbl_item = doc.add_table(rows=len(items) + 2, cols=4)
             tbl_item.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -1212,8 +1312,93 @@ def build_report_pdf(payload, photos, logo_bytes=None):
         style_body,
     ))
 
+    armoire = payload.get("armoire") if payload.get("template") == "verif_armoire" else None
+    if armoire:
+        story.append(Paragraph("Grille de vérification &mdash; Fiche de contrôle armoire V2024", style_h2))
+
+        meta_a = [
+            ("N° d'Affaire :", armoire.get("affaire", "")),
+            ("Identification de l'armoire :", armoire.get("identification", "")),
+            ("Plan n° :", armoire.get("plan", "")),
+            ("Indice :", armoire.get("indice", "")),
+            ("Nom du câbleur :", armoire.get("cableur", "")),
+            ("Nom du contrôleur :", armoire.get("controleur", "")),
+            ("Type de contrôle :", "Réglementaire" if armoire.get("reglementaire") else "Non réglementaire"),
+        ]
+        meta_a_data = [
+            [Paragraph(f"<b>{k}</b>", style_body), Paragraph(v or "N/C", style_body)]
+            for k, v in meta_a
+        ]
+        meta_a_table = Table(meta_a_data, colWidths=[5.5 * cm, USABLE_W - 5.5 * cm])
+        meta_a_table.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F1F5F9")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.append(meta_a_table)
+        story.append(Spacer(1, 8))
+
+        result_colors = {"OK": "#10B981", "NOK": "#E11D48", "SO": "#64748B"}
+        result_labels = {"OK": "OK", "NOK": "NOK", "SO": "S.O."}
+
+        for section in armoire.get("sections") or []:
+            story.append(Paragraph(section.get("title", ""), style_h2))
+            if section.get("note"):
+                story.append(Paragraph(section["note"], style_caption))
+                story.append(Spacer(1, 3))
+
+            check_items = [it for it in (section.get("items") or []) if it.get("type") != "text"]
+            text_items = [it for it in (section.get("items") or []) if it.get("type") == "text"]
+
+            if check_items:
+                label_w, result_w = 9.5 * cm, 1.6 * cm
+                comment_w = USABLE_W - label_w - result_w
+                data = [["Point de contrôle", "Résultat", "Modification / problème constaté"]]
+                for item in check_items:
+                    label = item.get("label", "")
+                    if item.get("reg"):
+                        label += ' <font color="#D97706">[Réglementaire]</font>'
+                    value = item.get("value", "")
+                    color = result_colors.get(value, "#94A3B8")
+                    result_text = f'<font color="{color}"><b>{result_labels.get(value, "—")}</b></font>'
+                    data.append([
+                        Paragraph(label, style_body),
+                        Paragraph(result_text, style_body),
+                        Paragraph(item.get("comment", "") or "", style_body),
+                    ])
+                chk_table = Table(data, colWidths=[label_w, result_w, comment_w], repeatRows=1)
+                chk_table.setStyle(TableStyle([
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1D4ED8")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 9),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ]))
+                story.append(chk_table)
+                story.append(Spacer(1, 6))
+
+            for item in text_items:
+                story.append(Paragraph(
+                    f"<b>{item.get('label', '')} :</b> {item.get('comment', '') or '—'}", style_body,
+                ))
+                story.append(Spacer(1, 6))
+
+        global_result = armoire.get("global_result")
+        if global_result:
+            is_ok = global_result == "CONFORME"
+            style_result = ParagraphStyle(
+                "RPArmoireResult", parent=styles["Normal"], alignment=TA_CENTER, fontSize=13,
+                textColor=colors.HexColor("#109881" if is_ok else "#E11D48"), spaceBefore=4, spaceAfter=6,
+            )
+            story.append(Paragraph("&#10003; CONFORME" if is_ok else "&#10005; NON CONFORME", style_result))
+
     items = payload.get("items") or []
-    if items:
+    if items and not armoire:
         story.append(Paragraph("Matériel &amp; Prestations", style_h2))
         qte_w, pu_w, total_w = 1.6 * cm, 2.6 * cm, 2.6 * cm
         desig_w = USABLE_W - (qte_w + pu_w + total_w)
