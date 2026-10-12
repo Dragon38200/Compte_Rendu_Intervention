@@ -199,7 +199,7 @@
       <!-- ---------- Grille de vérification armoire électrique ---------- -->
       <div class="tpl-panel tpl-verif_armoire hidden">
         <h2 class="panel-title armoire-title">
-          <span class="armoire-title-icon">🗄️</span> 2. Grille de vérification — Fiche de contrôle armoire V2024
+          <span class="armoire-title-icon">🗄️</span> 2. Vérification armoire électrique — Identification
         </h2>
 
         <div class="armoire-meta grid-2">
@@ -232,16 +232,6 @@
           <input type="checkbox" id="aReglementaire" checked>
           Contrôle réglementaire
         </label>
-
-        <div class="armoire-checklist" id="armoireChecklist"></div>
-
-        <div class="armoire-result">
-          <label>RÉSULTAT GLOBAL DU CONTRÔLE</label>
-          <div class="seg-control seg-control-result" id="armoireGlobalResult">
-            <button type="button" class="seg-btn seg-ok" data-value="CONFORME">✓ Conforme</button>
-            <button type="button" class="seg-btn seg-nok" data-value="NON_CONFORME">✕ Non conforme</button>
-          </div>
-        </div>
       </div>
     </section>
 
@@ -285,6 +275,23 @@
           <button type="button" class="btn btn-ghost" id="btnGeneratePdf">📑 Export PDF</button>
           <button type="button" class="btn btn-ghost" id="btnEmailReport">✉️ Envoyer par email</button>
           <button type="button" class="btn btn-accent" id="btnGenerate">📄 Générer le rapport (.docx)</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- Grille de vérification pleine largeur (verif_armoire) ---------- -->
+    <section class="panel armoire-wide-panel tpl-panel tpl-verif_armoire hidden">
+      <h2 class="panel-title armoire-title">
+        <span class="armoire-title-icon">🗄️</span> Grille de vérification — Fiche de contrôle armoire V2024
+      </h2>
+
+      <div class="armoire-checklist" id="armoireChecklist"></div>
+
+      <div class="armoire-result">
+        <label>RÉSULTAT GLOBAL DU CONTRÔLE</label>
+        <div class="seg-control seg-control-result" id="armoireGlobalResult">
+          <button type="button" class="seg-btn seg-ok" data-value="CONFORME">✓ Conforme</button>
+          <button type="button" class="seg-btn seg-nok" data-value="NON_CONFORME">✕ Non conforme</button>
         </div>
       </div>
     </section>

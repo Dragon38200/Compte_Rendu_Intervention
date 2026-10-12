@@ -470,7 +470,16 @@ label.checkbox-inline input[type="checkbox"] {
 
 .armoire-meta { margin-top: 2px; }
 
+/* Panneau pleine largeur : sur PC, la grille des 3 volets prend toute la
+   largeur de la mise en page (au lieu d'être coincée dans la colonne de
+   gauche) pour que chaque ligne reste lisible. */
+.armoire-wide-panel { grid-column: 1 / -1; }
+
 .armoire-checklist { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+@media (min-width: 901px) {
+  .armoire-item-label { font-size: 12.5px; }
+  .armoire-comment { width: 280px; }
+}
 
 .armoire-section {
   border: 1px solid var(--border-soft); border-radius: 10px; overflow: hidden;
