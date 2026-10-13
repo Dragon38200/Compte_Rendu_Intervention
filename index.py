@@ -29,6 +29,8 @@ import re
 import tempfile
 import uuid
 import math
+import traceback
+from urllib.parse import quote
 from functools import wraps
 
 from flask import Flask, request, jsonify, g, send_file, Response
@@ -406,7 +408,13 @@ def blob_upload_bytes(data: bytes, filename_hint: str, content_type: str = "appl
             },
             timeout=30,
         )
-        resp.raise_for_status()
+        if not resp.ok:
+            # On inclut le corps de la réponse Vercel Blob dans l'erreur : il
+            # contient en général la vraie raison (jeton invalide, store
+            # introuvable/suspendu, pathname refusé, etc.), bien plus utile
+            # que le "500" générique de resp.raise_for_status().
+            detail = (resp.text or "").strip()[:300]
+            raise RuntimeError(f"Échec de l'envoi vers Vercel Blob (HTTP {resp.status_code}) : {detail}")
         try:
             return resp.json().get("url") or f"{BLOB_API_BASE}/{key}"
         except ValueError:
@@ -418,22 +426,21 @@ def blob_upload_bytes(data: bytes, filename_hint: str, content_type: str = "appl
         return f"/local-blob/{key}"
 
 
-def save_generated_report(user_id, filename, payload, docx_bytes):
+def save_generated_report(user_id, filename, payload, file_bytes,
+                           content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"):
     """
-    Enregistre un rapport Word généré dans « Mes rapports » : le fichier
-    part sur Vercel Blob (même mécanisme que les logos) et une ligne est
-    ajoutée dans la table `rapports` pour pouvoir le retrouver plus tard.
+    Enregistre un rapport généré (Word ou PDF) dans « Tous les rapports » :
+    le fichier part sur Vercel Blob (même mécanisme que les logos) et une
+    ligne est ajoutée dans la table `rapports` pour pouvoir le retrouver
+    plus tard, quel que soit le format utilisé pour le générer.
     """
     _ensure_postgres_rapports_table()
-    url = blob_upload_bytes(
-        docx_bytes, filename,
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    )
+    url = blob_upload_bytes(file_bytes, filename, content_type)
     db_insert_returning_id(
         "INSERT INTO rapports (user_id, nom, client, date_rapport, url, taille_octets) "
         "VALUES (%s, %s, %s, %s, %s, %s)",
         (user_id, filename, (payload.get("client") or "").strip(),
-         (payload.get("date") or "").strip(), url, len(docx_bytes)),
+         (payload.get("date") or "").strip(), url, len(file_bytes)),
     )
 
 
@@ -1833,17 +1840,25 @@ def generate_report():
     # Sauvegarde best-effort dans "Mes rapports" (Vercel Blob + base de
     # données) : si ça échoue pour une raison quelconque (Blob non relié,
     # etc.), on ne bloque surtout pas le téléchargement du rapport, qui est
-    # la chose prioritaire pour l'utilisateur à cet instant.
+    # la chose prioritaire pour l'utilisateur à cet instant. On remonte
+    # quand même la raison exacte au frontend via un en-tête (visible dans
+    # l'app), en plus des logs serveur, pour ne plus échouer en silence.
+    save_warning = None
     try:
         save_generated_report(g.user_id, filename, payload, docx_bytes)
     except Exception as e:
+        save_warning = str(e)
         print(f"Avertissement : sauvegarde dans « Mes rapports » ignorée ({e})")
+        traceback.print_exc()
 
-    return Response(
+    resp = Response(
         docx_bytes,
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+    if save_warning:
+        resp.headers["X-Report-Save-Warning"] = quote(save_warning[:400], safe="")
+    return resp
 
 
 @app.post("/api/generate-pdf")
@@ -1878,11 +1893,25 @@ def generate_report_pdf():
     if not filename.lower().endswith(".pdf"):
         filename += ".pdf"
 
-    return Response(
+    # Sauvegarde best-effort dans « Tous les rapports », comme pour le
+    # .docx (voir /api/generate) : si ça échoue, on ne bloque surtout pas
+    # le téléchargement, mais on remonte la raison exacte au frontend.
+    save_warning = None
+    try:
+        save_generated_report(g.user_id, filename, payload, pdf_bytes, content_type="application/pdf")
+    except Exception as e:
+        save_warning = str(e)
+        print(f"Avertissement : sauvegarde dans « Tous les rapports » ignorée ({e})")
+        traceback.print_exc()
+
+    resp = Response(
         pdf_bytes,
         mimetype="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+    if save_warning:
+        resp.headers["X-Report-Save-Warning"] = quote(save_warning[:400], safe="")
+    return resp
 
 
 @app.post("/api/send-report-email")
@@ -1952,15 +1981,18 @@ def send_report_email():
     except Exception as e:
         return jsonify({"error": str(e)}), 502
 
-    # Sauvegarde best-effort dans « Mes rapports » (docx uniquement, comme
-    # pour /api/generate), sans bloquer la confirmation d'envoi si ça échoue.
-    if email_format == "docx":
-        try:
-            save_generated_report(g.user_id, filename, payload, file_bytes)
-        except Exception as e:
-            print(f"Avertissement : sauvegarde dans « Mes rapports » ignorée ({e})")
+    # Sauvegarde best-effort dans « Tous les rapports » (Word ou PDF selon
+    # le format choisi pour l'envoi), sans bloquer la confirmation d'envoi
+    # si ça échoue.
+    save_warning = None
+    try:
+        save_generated_report(g.user_id, filename, payload, file_bytes, content_type=mimetype)
+    except Exception as e:
+        save_warning = str(e)
+        print(f"Avertissement : sauvegarde dans « Tous les rapports » ignorée ({e})")
+        traceback.print_exc()
 
-    return jsonify({"ok": True, "sent_to": email_to})
+    return jsonify({"ok": True, "sent_to": email_to, "save_warning": save_warning})
 
 
 @app.post("/api/admin/login")

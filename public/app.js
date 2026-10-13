@@ -1229,6 +1229,12 @@ async function generateReportFile({ endpoint, extension, statusVerb }) {
       }
       throw new Error(msg);
     }
+    // Avertissement best-effort remonté par le serveur si le rapport n'a
+    // pas pu être enregistré dans "Tous les rapports" (Blob/DB), même si
+    // le fichier généré ci-dessous est bien valide et téléchargé.
+    const rawSaveWarning = resp.headers.get("X-Report-Save-Warning");
+    const saveWarning = rawSaveWarning ? decodeURIComponent(rawSaveWarning) : null;
+
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1239,7 +1245,11 @@ async function generateReportFile({ endpoint, extension, statusVerb }) {
     a.remove();
     URL.revokeObjectURL(url);
 
-    setStatus(`Rapport ${extension.toUpperCase()} généré avec succès`, "success");
+    if (saveWarning) {
+      setStatus(`Rapport ${extension.toUpperCase()} généré, mais pas enregistré dans "Tous les rapports" : ${saveWarning}`, "error");
+    } else {
+      setStatus(`Rapport ${extension.toUpperCase()} généré avec succès`, "success");
+    }
   } catch (err) {
     setStatus(`Échec : ${err.message}`, "error");
   }
@@ -1300,7 +1310,11 @@ document.getElementById("btnEmailSend").addEventListener("click", async () => {
     }
 
     closeAllModals();
-    setStatus(`Rapport envoyé par email à ${data.sent_to}`, "success");
+    if (data.save_warning) {
+      setStatus(`Rapport envoyé à ${data.sent_to}, mais pas enregistré dans "Tous les rapports" : ${data.save_warning}`, "error");
+    } else {
+      setStatus(`Rapport envoyé par email à ${data.sent_to}`, "success");
+    }
   } catch (err) {
     emailError.textContent = err.message;
     emailError.classList.remove("hidden");
@@ -1455,7 +1469,7 @@ async function renderRapportsList() {
     return;
   }
   if (!rapports.length) {
-    list.innerHTML = '<div class="modal-empty">Aucun rapport enregistré pour l’instant — ils apparaîtront ici après chaque génération au format Word.</div>';
+    list.innerHTML = '<div class="modal-empty">Aucun rapport enregistré pour l’instant — ils apparaîtront ici après chaque génération (Word, PDF ou envoi par email).</div>';
     return;
   }
   list.innerHTML = "";
