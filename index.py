@@ -571,7 +571,7 @@ def _get_template_bytes():
 #  (public/app.js, ARMOIRE_CHECKLIST), le backend se contente de mettre
 #  en forme ce que le payload["armoire"] contient.
 # ======================================================================
-_ARMOIRE_RESULT_LABELS = {"OK": "OK", "NOK": "NOK", "SO": "S.O."}
+_ARMOIRE_RESULT_LABELS = {"OK": "OK", "NOK": "NOK", "SO": "NC"}
 
 
 def _render_armoire_section_docx(doc, armoire):
@@ -610,14 +610,24 @@ def _render_armoire_section_docx(doc, armoire):
             tbl_chk = doc.add_table(rows=len(check_items) + 1, cols=3)
             tbl_chk.alignment = WD_TABLE_ALIGNMENT.CENTER
             tbl_chk.style = 'Table Grid'
-            headers = ["Point de contrôle", "Résultat", "Modification / problème constaté"]
+            headers = ["Point de contrôle", "Rés.", "Modification / problème constaté"]
             for i, h in enumerate(headers):
                 cell = tbl_chk.rows[0].cells[i]
                 cell.text = h
                 cell.paragraphs[0].runs[0].font.bold = True
-            tbl_chk.columns[0].width = Inches(3.6)
-            tbl_chk.columns[1].width = Inches(0.9)
-            tbl_chk.columns[2].width = Inches(2.3)
+                if i == 1:
+                    cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            # Colonne "Résultat" réduite au strict minimum (juste assez pour
+            # "NOK" en gras, la plus longue des 3 valeurs possibles : OK,
+            # NOK, NC) pour laisser le plus de place possible à "Point de
+            # contrôle" et viser une seule ligne par point de contrôle.
+            col_widths = [Inches(4.35), Inches(0.45), Inches(2.0)]
+            tbl_chk.autofit = False
+            tbl_chk.allow_autofit = False
+            for i, w in enumerate(col_widths):
+                tbl_chk.columns[i].width = w
+                for row in tbl_chk.rows:
+                    row.cells[i].width = w
 
             for r, item in enumerate(check_items, start=1):
                 label = item.get("label", "")
@@ -628,6 +638,7 @@ def _render_armoire_section_docx(doc, armoire):
                 value = item.get("value", "")
                 cell_val = tbl_chk.rows[r].cells[1]
                 cell_val.text = _ARMOIRE_RESULT_LABELS.get(value, "—")
+                cell_val.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
                 run_val = cell_val.paragraphs[0].runs[0]
                 run_val.font.bold = True
                 if value == "NOK":
@@ -1230,6 +1241,9 @@ def build_report_pdf(payload, photos, logo_bytes=None):
         textColor=colors.HexColor("#1D4ED8"), spaceBefore=12, spaceAfter=6,
     )
     style_body = ParagraphStyle("RPBody", parent=styles["Normal"], fontSize=10, leading=14)
+    style_body_center = ParagraphStyle(
+        "RPBodyCenter", parent=style_body, alignment=TA_CENTER, fontSize=9,
+    )
     style_caption = ParagraphStyle(
         "RPCaption", parent=styles["Normal"], fontName="Helvetica-Oblique",
         fontSize=8, leading=10, alignment=TA_CENTER,
@@ -1237,6 +1251,11 @@ def build_report_pdf(payload, photos, logo_bytes=None):
     style_sig_label = ParagraphStyle(
         "RPSigLabel", parent=styles["Normal"], fontSize=9, alignment=TA_CENTER, leading=13,
     )
+    style_th = ParagraphStyle(
+        "RPTableHeader", parent=styles["Normal"], fontName="Helvetica-Bold",
+        fontSize=9, leading=11, textColor=colors.white,
+    )
+    style_th_center = ParagraphStyle("RPTableHeaderCenter", parent=style_th, alignment=TA_CENTER)
 
     class NumberedCanvas(Canvas):
         """Canvas à deux passes : permet d'afficher « Page X / Y » en pied
@@ -1367,7 +1386,7 @@ def build_report_pdf(payload, photos, logo_bytes=None):
         story.append(Spacer(1, 8))
 
         result_colors = {"OK": "#10B981", "NOK": "#E11D48", "SO": "#64748B"}
-        result_labels = {"OK": "OK", "NOK": "NOK", "SO": "S.O."}
+        result_labels = {"OK": "OK", "NOK": "NOK", "SO": "NC"}
 
         for section in armoire.get("sections") or []:
             story.append(Paragraph(section.get("title", ""), style_h2))
@@ -1379,9 +1398,20 @@ def build_report_pdf(payload, photos, logo_bytes=None):
             text_items = [it for it in (section.get("items") or []) if it.get("type") == "text"]
 
             if check_items:
-                label_w, result_w = 9.5 * cm, 1.6 * cm
+                # Colonne "Résultat" réduite au minimum pour tenir sur "NOK"
+                # (la plus longue des 3 valeurs : OK, NOK, NC), le gain de
+                # place revient à "Point de contrôle" pour viser une seule
+                # ligne par point de contrôle. Les en-têtes passent par des
+                # Paragraph (comme le corps du tableau) pour que les plus
+                # longs ("Modification / problème constaté") se replient
+                # sur plusieurs lignes au lieu de déborder de la page.
+                label_w, result_w = 11.0 * cm, 1.1 * cm
                 comment_w = USABLE_W - label_w - result_w
-                data = [["Point de contrôle", "Résultat", "Modification / problème constaté"]]
+                data = [[
+                    Paragraph("Point de contrôle", style_th),
+                    Paragraph("Rés.", style_th_center),
+                    Paragraph("Modification / problème constaté", style_th),
+                ]]
                 for item in check_items:
                     label = item.get("label", "")
                     if item.get("reg"):
@@ -1391,7 +1421,7 @@ def build_report_pdf(payload, photos, logo_bytes=None):
                     result_text = f'<font color="{color}"><b>{result_labels.get(value, "—")}</b></font>'
                     data.append([
                         Paragraph(label, style_body),
-                        Paragraph(result_text, style_body),
+                        Paragraph(result_text, style_body_center),
                         Paragraph(item.get("comment", "") or "", style_body),
                     ])
                 chk_table = Table(data, colWidths=[label_w, result_w, comment_w], repeatRows=1)
