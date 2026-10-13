@@ -414,6 +414,25 @@ def blob_upload_bytes(data: bytes, filename_hint: str, content_type: str = "appl
             # introuvable/suspendu, pathname refusé, etc.), bien plus utile
             # que le "500" générique de resp.raise_for_status().
             detail = (resp.text or "").strip()[:300]
+            if "private store" in detail.lower():
+                # Cas précis et non récupérable en changeant un paramètre :
+                # le store Blob connecté au projet a été créé en accès
+                # "Private" (mode fixé à la création, non modifiable).
+                # L'appli a besoin d'URLs publiques directes (logos affichés
+                # dans le navigateur, liens de téléchargement des rapports,
+                # images réinjectées dans les rapports générés) : il faut un
+                # store "Public" — recréer un store Blob dans Vercel en
+                # choisissant explicitement l'accès Public, le connecter au
+                # projet (ou mettre à jour BLOB_READ_WRITE_TOKEN avec son
+                # jeton), puis redéployer.
+                raise RuntimeError(
+                    "Le store Vercel Blob connecté à ce projet est configuré en accès « Private », "
+                    "or l'application a besoin d'un store « Public » (URLs directes pour les logos, "
+                    "photos et rapports). L'accès d'un store ne peut pas être changé après coup : il "
+                    "faut créer un NOUVEAU store Blob dans Vercel (Storage → Create → Blob → accès "
+                    "« Public »), le connecter à ce projet (ou copier son BLOB_READ_WRITE_TOKEN dans "
+                    "les variables d'environnement), puis redéployer."
+                )
             raise RuntimeError(f"Échec de l'envoi vers Vercel Blob (HTTP {resp.status_code}) : {detail}")
         try:
             return resp.json().get("url") or f"{BLOB_API_BASE}/{key}"
