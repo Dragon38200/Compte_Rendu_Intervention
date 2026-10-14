@@ -288,10 +288,13 @@
       <div class="armoire-checklist" id="armoireChecklist"></div>
 
       <div class="armoire-result">
-        <label>RÉSULTAT GLOBAL DU CONTRÔLE</label>
-        <div class="seg-control seg-control-result" id="armoireGlobalResult">
-          <button type="button" class="seg-btn seg-ok" data-value="CONFORME">✓ Conforme</button>
-          <button type="button" class="seg-btn seg-nok" data-value="NON_CONFORME">✕ Non conforme</button>
+        <label>NOTATION AUTOMATIQUE DU CONTRÔLE</label>
+        <div class="armoire-notation" id="armoireNotation">
+          <div class="armoire-notation-score">
+            <span class="armoire-notation-pct" id="armoireNotationPct">—</span>
+            <span class="armoire-notation-detail" id="armoireNotationDetail">0 point conforme sur 0 évalué (NC exclus)</span>
+          </div>
+          <div class="armoire-notation-badge verdict-pending" id="armoireNotationBadge">En attente de saisie</div>
         </div>
       </div>
     </section>

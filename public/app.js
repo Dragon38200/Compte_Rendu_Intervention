@@ -384,7 +384,7 @@ function renderArmoireChecklist() {
         seg.innerHTML = `
           <button type="button" class="seg-btn seg-ok" data-value="OK">OK</button>
           <button type="button" class="seg-btn seg-nok" data-value="NOK">NOK</button>
-          <button type="button" class="seg-btn seg-so" data-value="SO">S.O.</button>
+          <button type="button" class="seg-btn seg-so" data-value="SO">NC</button>
         `;
         seg.querySelectorAll(".seg-btn").forEach(btn => {
           btn.addEventListener("click", () => {
@@ -393,6 +393,7 @@ function renderArmoireChecklist() {
             if (!already) btn.classList.add("active");
             row.classList.toggle("has-nok", !already && btn.dataset.value === "NOK");
             updateArmoireSectionCount(section.id);
+            updateArmoireNotation();
           });
         });
         const comment = document.createElement("input");
@@ -432,13 +433,61 @@ function updateArmoireSectionCount(sectionId) {
   badge.classList.toggle("complete", answered === checkableItems.length);
 }
 
-document.querySelectorAll("#armoireGlobalResult .seg-btn").forEach(btn => {
-  btn.addEventListener("click", () => {
-    const already = btn.classList.contains("active");
-    document.querySelectorAll("#armoireGlobalResult .seg-btn").forEach(b => b.classList.remove("active"));
-    if (!already) btn.classList.add("active");
+/* ===================================================================== */
+/*  Notation automatique : % de points conformes (OK) par rapport au     */
+/*  nombre total de points évalués, les points "NC" (non concerné)       */
+/*  étant exclus du calcul. Barème :                                     */
+/*    100 % de OK  -> Conforme                                           */
+/*    >= 80 % de OK -> Admis sous réserves                                */
+/*    <  80 % de OK -> Contrôle qualité refusé                           */
+/* ===================================================================== */
+const ARMOIRE_VERDICT_META = {
+  CONFORME: { label: "✓ Conforme", className: "verdict-ok" },
+  ADMIS_SOUS_RESERVES: { label: "⚠ Admis sous réserves", className: "verdict-warn" },
+  REFUSE: { label: "✕ Contrôle qualité refusé", className: "verdict-refuse" },
+};
+
+function computeArmoireNotation() {
+  let ok = 0, nok = 0, nc = 0;
+  document.querySelectorAll(".armoire-item:not(.armoire-item-text)").forEach(row => {
+    const activeBtn = row.querySelector(".seg-btn.active");
+    if (!activeBtn) return;
+    const value = activeBtn.dataset.value;
+    if (value === "OK") ok++;
+    else if (value === "NOK") nok++;
+    else if (value === "SO") nc++;
   });
-});
+  const considered = ok + nok;
+  const pct = considered ? (ok / considered) * 100 : null;
+  let verdict = null;
+  if (pct !== null) {
+    if (pct >= 100) verdict = "CONFORME";
+    else if (pct >= 80) verdict = "ADMIS_SOUS_RESERVES";
+    else verdict = "REFUSE";
+  }
+  return { ok, nok, nc, considered, pct, verdict };
+}
+
+function updateArmoireNotation() {
+  const pctLabel = document.getElementById("armoireNotationPct");
+  const detailLabel = document.getElementById("armoireNotationDetail");
+  const badge = document.getElementById("armoireNotationBadge");
+  if (!pctLabel || !detailLabel || !badge) return;
+
+  const { ok, considered, pct, verdict } = computeArmoireNotation();
+  pctLabel.textContent = pct === null ? "—" : `${Math.round(pct)} %`;
+  detailLabel.textContent =
+    `${ok} point${ok > 1 ? "s" : ""} conforme${ok > 1 ? "s" : ""} sur ${considered} évalué${considered > 1 ? "s" : ""} (NC exclus)`;
+
+  badge.classList.remove("verdict-pending", "verdict-ok", "verdict-warn", "verdict-refuse");
+  if (!verdict) {
+    badge.textContent = "En attente de saisie";
+    badge.classList.add("verdict-pending");
+  } else {
+    badge.textContent = ARMOIRE_VERDICT_META[verdict].label;
+    badge.classList.add(ARMOIRE_VERDICT_META[verdict].className);
+  }
+}
 
 function getArmoirePayload() {
   const sections = ARMOIRE_CHECKLIST.map(section => ({
@@ -461,7 +510,6 @@ function getArmoirePayload() {
       };
     }),
   }));
-  const globalBtn = document.querySelector("#armoireGlobalResult .seg-btn.active");
   return {
     affaire: document.getElementById("aAffaire").value.trim(),
     identification: document.getElementById("aIdentification").value.trim(),
@@ -470,7 +518,6 @@ function getArmoirePayload() {
     cableur: document.getElementById("aCableur").value.trim(),
     controleur: document.getElementById("aControleur").value.trim(),
     reglementaire: document.getElementById("aReglementaire").checked,
-    global_result: globalBtn ? globalBtn.dataset.value : "",
     sections,
   };
 }
@@ -483,11 +530,12 @@ function resetArmoireChecklist() {
   document.querySelectorAll(".armoire-item .seg-btn.active").forEach(b => b.classList.remove("active"));
   document.querySelectorAll(".armoire-item").forEach(r => r.classList.remove("has-nok"));
   document.querySelectorAll(".armoire-comment").forEach(i => { i.value = ""; });
-  document.querySelectorAll("#armoireGlobalResult .seg-btn.active").forEach(b => b.classList.remove("active"));
   ARMOIRE_CHECKLIST.forEach(section => updateArmoireSectionCount(section.id));
+  updateArmoireNotation();
 }
 
 renderArmoireChecklist();
+updateArmoireNotation();
 
 /* ===================================================================== */
 /*  Bibliothèque clients (client + sites)                                */
