@@ -2065,10 +2065,17 @@ def upload_logo():
     if not nom or not file:
         return jsonify({"error": "Nom et fichier requis."}), 400
 
-    url = blob_upload_bytes(file.read(), file.filename, file.mimetype or "image/png")
-    logo_id = db_insert_returning_id(
-        "INSERT INTO logos (user_id, nom, url) VALUES (%s, %s, %s)", (g.user_id, nom, url)
-    )
+    try:
+        url = blob_upload_bytes(file.read(), file.filename, file.mimetype or "image/png")
+        logo_id = db_insert_returning_id(
+            "INSERT INTO logos (user_id, nom, url) VALUES (%s, %s, %s)", (g.user_id, nom, url)
+        )
+    except Exception as e:
+        # Message explicite (ex : store Blob « Private ») au lieu d'un 500 HTML
+        # que le navigateur afficherait sous la forme « Erreur serveur (500) ».
+        print(f"Échec de l'ajout du logo à la bibliothèque : {e}")
+        traceback.print_exc()
+        return jsonify({"error": f"Logo non enregistré : {e}"}), 502
     return jsonify({"id": logo_id, "nom": nom, "url": url}), 201
 
 
