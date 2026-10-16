@@ -755,6 +755,19 @@ document.getElementById("btnTechDelete").addEventListener("click", async () => {
   techFormNew();
 });
 
+document.getElementById("btnTechUse").addEventListener("click", () => {
+  const nom = document.getElementById("teNom").value.trim();
+  if (!nom) {
+    alert("Sélectionne d'abord un technicien dans la liste à gauche.");
+    return;
+  }
+  const field = document.getElementById("fTechnicien");
+  field.value = nom;
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+  closeAllModals();
+  setStatus(`Technicien « ${nom} » chargé dans le rapport`, "success");
+});
+
 /* ===================================================================== */
 /*  Logo client                                                          */
 /* ===================================================================== */
