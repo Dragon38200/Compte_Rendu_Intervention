@@ -5,7 +5,7 @@
 /* ===================================================================== */
 const state = {
   user: null,
-  template: "intervention", // "intervention" | "verif_armoire" | "prep_intervention"
+  template: "intervention", // "intervention" | "verif_armoire" | "prep_intervention" | "crealis"
   clients: [],        // [{id, nom, sites:[{id, site, adresse, contact}]}]
   techniciens: [],     // [{id, nom}]
   logos: [],           // [{id, nom, url}]
@@ -1446,6 +1446,8 @@ function applyTemplateVisibility(template) {
   document.querySelectorAll(".tpl-panel").forEach(panel => {
     panel.classList.toggle("hidden", !panel.classList.contains(`tpl-${template}`));
   });
+  // Thème clair bleu/vert propre à l'onglet Crealis.
+  document.documentElement.classList.toggle("theme-crealis", template === "crealis");
 }
 
 document.querySelectorAll(".template-tab").forEach(tab => {

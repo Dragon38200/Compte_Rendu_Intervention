@@ -500,6 +500,7 @@ REPORT_TEMPLATES = {
     "intervention": {"label": "Rapport d'intervention", "doc_title": "RAPPORT D'INTERVENTION"},
     "verif_armoire": {"label": "Vérification Armoire Électrique", "doc_title": "VÉRIFICATION ARMOIRE ÉLECTRIQUE"},
     "prep_intervention": {"label": "Préparation Intervention", "doc_title": "PRÉPARATION INTERVENTION"},
+    "crealis": {"label": "Compte Rendu Intervention Crealis", "doc_title": "COMPTE RENDU D'INTERVENTION CREALIS"},
 }
 DEFAULT_TEMPLATE_ID = "intervention"
 

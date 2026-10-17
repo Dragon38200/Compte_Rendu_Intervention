@@ -575,3 +575,51 @@ label.checkbox-inline input[type="checkbox"] {
 .armoire-notation-badge.verdict-ok { background: rgba(16,185,129,0.18); color: #6EE7B7; }
 .armoire-notation-badge.verdict-warn { background: rgba(251,191,36,0.18); color: #FDE68A; }
 .armoire-notation-badge.verdict-refuse { background: rgba(225,29,72,0.2); color: #FCA5A5; }
+
+/* ---------------- Thème clair « Crealis » (bleu / vert) ----------------
+   Activé par la classe .theme-crealis sur <html> quand l'onglet
+   « Compte Rendu Intervention Crealis » est sélectionné. Palette claire
+   bleu/vert inspirée de climalife.com (valeurs approchantes). */
+:root.theme-crealis {
+  --bg: #F2F7FB;
+  --panel: #FFFFFF;
+  --panel-2: #F7FAFD;
+  --border: #B9CCDD;
+  --border-soft: rgba(0, 94, 160, 0.16);
+  --text: #12324A;
+  --text-muted: #5B7489;
+  --accent: #0A8FD8;
+  --accent-2: #0B6FB8;
+  --success: #3E9B3A;
+  --danger: #D6274B;
+  --warning: #E39B0B;
+}
+.theme-crealis body { background: linear-gradient(180deg, #EAF4FB 0%, #F2F7FB 240px); }
+.theme-crealis input, .theme-crealis textarea, .theme-crealis select {
+  background-color: #FFFFFF; border-color: #B9CCDD; color: var(--text);
+}
+.theme-crealis input:focus, .theme-crealis textarea:focus, .theme-crealis select:focus {
+  border-color: var(--accent); box-shadow: 0 0 0 3px rgba(10, 143, 216, 0.15); outline: none;
+}
+.theme-crealis label, .theme-crealis .panel-title { color: #0B6FB8; }
+.theme-crealis .topbar { background: rgba(255, 255, 255, 0.92); box-shadow: 0 1px 0 rgba(0, 94, 160, 0.1); }
+.theme-crealis .topbar-brand { color: #0B6FB8; }
+.theme-crealis .template-tabs { background: #FFFFFF; border-color: rgba(0, 94, 160, 0.16); }
+.theme-crealis .template-tab { color: #5B7489; }
+.theme-crealis .template-tab:hover { color: #0B6FB8; }
+.theme-crealis .template-tab.active { background: linear-gradient(135deg, #0A8FD8, #0B6FB8); color: #FFFFFF; }
+.theme-crealis .panel { box-shadow: 0 2px 10px rgba(11, 111, 184, 0.07); }
+.theme-crealis .btn-primary { background: linear-gradient(135deg, #0A8FD8, #0B6FB8); }
+.theme-crealis .btn-accent { background: linear-gradient(135deg, #5DB83A, #3E9B3A); }
+.theme-crealis .btn-ghost { background: #E6F0F8; color: #0B6FB8; }
+.theme-crealis .btn-danger-ghost { background: #FDECEF; color: #C0223F; }
+.theme-crealis .items-table th { color: #0B6FB8; }
+.theme-crealis .items-table td { border-bottom-color: rgba(0, 94, 160, 0.1); }
+.theme-crealis .items-total strong { color: #3E9B3A; }
+.theme-crealis .status-label { color: var(--text-muted); }
+.theme-crealis .modal { background: #FFFFFF; }
+.theme-crealis .modal-list-item { color: var(--text); border-bottom-color: rgba(0, 94, 160, 0.1); }
+.theme-crealis ::-webkit-scrollbar-thumb { background: rgba(11, 111, 184, 0.3); }
+.theme-crealis .logo-zone, .theme-crealis .photo-zone { border-color: #8FB8D8; background: #F2F8FC; }
+.theme-crealis .photo-zone.dragover { background: rgba(10, 143, 216, 0.1); color: var(--text); }
+.theme-crealis .logo-empty, .theme-crealis .photo-zone { color: var(--text-muted); }
