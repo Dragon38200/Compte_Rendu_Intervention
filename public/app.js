@@ -1448,6 +1448,31 @@ function applyTemplateVisibility(template) {
   });
   // Thème clair bleu/vert propre à l'onglet Crealis.
   document.documentElement.classList.toggle("theme-crealis", template === "crealis");
+  applyBrandForTemplate(template);
+}
+
+// Bandeau du haut : logo + titre spécifiques à l'onglet Crealis (Climalife),
+// valeurs Mounier d'origine pour tous les autres onglets.
+const BRAND_DEFAULT = {
+  icon: "assets/logo-mounier.png",
+  title: "Logiciel de compte rendus d'interventions Mounier SAS",
+  alt: "Mounier SAS",
+};
+const BRAND_CREALIS = {
+  icon: "assets/logo-climalife.png",
+  title: "Compte Rendu Intervention SERVICES Climalife",
+  alt: "Climalife",
+};
+function applyBrandForTemplate(template) {
+  const brand = template === "crealis" ? BRAND_CREALIS : BRAND_DEFAULT;
+  const icon = document.getElementById("brandIcon");
+  const title = document.getElementById("brandTitle");
+  const box = document.getElementById("topbarBrand");
+  if (!icon || !title || !box) return;
+  icon.src = brand.icon;
+  icon.alt = brand.alt;
+  title.textContent = brand.title;
+  box.title = brand.title;
 }
 
 document.querySelectorAll(".template-tab").forEach(tab => {
