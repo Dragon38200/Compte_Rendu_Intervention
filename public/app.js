@@ -1464,20 +1464,24 @@ const BRAND_DEFAULT = {
 const BRAND_CREALIS = {
   icon: "assets/logo-climalife.png",
   title: "Compte Rendu Intervention SERVICES Climalife",
-  titleArmoire: "Vérification Armoire Électrique SERVICES Climalife",
   alt: "Climalife",
 };
+const BRAND_SMATI = {
+  icon: "assets/logo-smati.png",
+  title: "Vérification Armoire Electrique SMATI",
+  alt: "SMATI",
+};
 function applyBrandForTemplate(template) {
-  const brand = isCrealisTemplate(template) ? BRAND_CREALIS : BRAND_DEFAULT;
+  const brand = template === "verif_armoire_crealis" ? BRAND_SMATI
+    : template === "crealis" ? BRAND_CREALIS : BRAND_DEFAULT;
   const icon = document.getElementById("brandIcon");
   const title = document.getElementById("brandTitle");
   const box = document.getElementById("topbarBrand");
   if (!icon || !title || !box) return;
   icon.src = brand.icon;
   icon.alt = brand.alt;
-  const text = template === "verif_armoire_crealis" ? brand.titleArmoire : brand.title;
-  title.textContent = text;
-  box.title = text;
+  title.textContent = brand.title;
+  box.title = brand.title;
 }
 
 document.querySelectorAll(".template-tab").forEach(tab => {

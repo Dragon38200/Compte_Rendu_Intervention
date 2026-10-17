@@ -623,7 +623,7 @@ label.checkbox-inline input[type="checkbox"] {
 .theme-crealis .logo-zone, .theme-crealis .photo-zone { border-color: #8FB8D8; background: #F2F8FC; }
 .theme-crealis .photo-zone.dragover { background: rgba(10, 143, 216, 0.1); color: var(--text); }
 .theme-crealis .logo-empty, .theme-crealis .photo-zone { color: var(--text-muted); }
-.theme-crealis .topbar-brand .brand-icon { width: auto; height: 30px; border-radius: 0; }
+.theme-crealis .topbar-brand .brand-icon { width: auto; height: 38px; border-radius: 0; }
 
 /* Grille de vérification armoire en thème clair */
 .theme-crealis .armoire-section { background: #F7FAFD; }
