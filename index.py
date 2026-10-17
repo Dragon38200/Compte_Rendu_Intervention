@@ -500,9 +500,12 @@ REPORT_TEMPLATES = {
     "intervention": {"label": "Rapport d'intervention", "doc_title": "RAPPORT D'INTERVENTION"},
     "verif_armoire": {"label": "Vérification Armoire Électrique", "doc_title": "VÉRIFICATION ARMOIRE ÉLECTRIQUE"},
     "prep_intervention": {"label": "Préparation Intervention", "doc_title": "PRÉPARATION INTERVENTION"},
+    "verif_armoire_crealis": {"label": "Vérification Armoire Électrique Crealis", "doc_title": "VÉRIFICATION ARMOIRE ÉLECTRIQUE CREALIS"},
     "crealis": {"label": "Compte Rendu Intervention Crealis", "doc_title": "COMPTE RENDU D'INTERVENTION CREALIS"},
 }
 DEFAULT_TEMPLATE_ID = "intervention"
+# Modèles qui utilisent la grille de vérification armoire (et sa notation).
+ARMOIRE_TEMPLATE_IDS = ("verif_armoire", "verif_armoire_crealis")
 
 
 def get_template_doc_title(payload):
@@ -1247,7 +1250,7 @@ def build_report_docx(payload, photos, logo_bytes=None):
         doc.add_heading("Observations & Travaux", level=1)
         doc.add_paragraph((payload.get("observations") or "").strip() or "Aucune observation particulière.")
 
-        armoire = payload.get("armoire") if payload.get("template") == "verif_armoire" else None
+        armoire = payload.get("armoire") if payload.get("template") in ARMOIRE_TEMPLATE_IDS else None
         if armoire:
             notation = _render_armoire_section_docx(doc, armoire)
             if notation["verdict"]:
@@ -1608,7 +1611,7 @@ def build_report_pdf(payload, photos, logo_bytes=None):
         style_body,
     ))
 
-    armoire = payload.get("armoire") if payload.get("template") == "verif_armoire" else None
+    armoire = payload.get("armoire") if payload.get("template") in ARMOIRE_TEMPLATE_IDS else None
     if armoire:
         story.append(Paragraph("Grille de vérification &mdash; Fiche de contrôle armoire V2024", style_h2))
 

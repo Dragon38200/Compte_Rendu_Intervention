@@ -5,7 +5,7 @@
 /* ===================================================================== */
 const state = {
   user: null,
-  template: "intervention", // "intervention" | "verif_armoire" | "prep_intervention" | "crealis"
+  template: "intervention", // "intervention" | "verif_armoire" | "prep_intervention" | "crealis" | "verif_armoire_crealis"
   clients: [],        // [{id, nom, sites:[{id, site, adresse, contact}]}]
   techniciens: [],     // [{id, nom}]
   logos: [],           // [{id, nom, url}]
@@ -1236,8 +1236,8 @@ async function buildGenerateFormData() {
     serie: document.getElementById("fSerie").value.trim(),
     observations: document.getElementById("fObservations").value.trim(),
     filename: document.getElementById("fFilename").value.trim() || "rapport",
-    items: state.template === "verif_armoire" ? [] : getItemsPayload(),
-    armoire: state.template === "verif_armoire" ? getArmoirePayload() : null,
+    items: isArmoireTemplate(state.template) ? [] : getItemsPayload(),
+    armoire: isArmoireTemplate(state.template) ? getArmoirePayload() : null,
     content,
     signatures: {
       technicien: { nom: state.signatures.technicien.nom || document.getElementById("fTechnicien").value.trim(), image: state.signatures.technicien.dataUrl },
@@ -1442,12 +1442,15 @@ function wireStaticButtons() {
 /* ===================================================================== */
 /*  Sélecteur de template de rapport                                     */
 /* ===================================================================== */
+const isArmoireTemplate = t => t === "verif_armoire" || t === "verif_armoire_crealis";
+const isCrealisTemplate = t => t === "crealis" || t === "verif_armoire_crealis";
+
 function applyTemplateVisibility(template) {
   document.querySelectorAll(".tpl-panel").forEach(panel => {
     panel.classList.toggle("hidden", !panel.classList.contains(`tpl-${template}`));
   });
   // Thème clair bleu/vert propre à l'onglet Crealis.
-  document.documentElement.classList.toggle("theme-crealis", template === "crealis");
+  document.documentElement.classList.toggle("theme-crealis", isCrealisTemplate(template));
   applyBrandForTemplate(template);
 }
 
@@ -1461,18 +1464,20 @@ const BRAND_DEFAULT = {
 const BRAND_CREALIS = {
   icon: "assets/logo-climalife.png",
   title: "Compte Rendu Intervention SERVICES Climalife",
+  titleArmoire: "Vérification Armoire Électrique SERVICES Climalife",
   alt: "Climalife",
 };
 function applyBrandForTemplate(template) {
-  const brand = template === "crealis" ? BRAND_CREALIS : BRAND_DEFAULT;
+  const brand = isCrealisTemplate(template) ? BRAND_CREALIS : BRAND_DEFAULT;
   const icon = document.getElementById("brandIcon");
   const title = document.getElementById("brandTitle");
   const box = document.getElementById("topbarBrand");
   if (!icon || !title || !box) return;
   icon.src = brand.icon;
   icon.alt = brand.alt;
-  title.textContent = brand.title;
-  box.title = brand.title;
+  const text = template === "verif_armoire_crealis" ? brand.titleArmoire : brand.title;
+  title.textContent = text;
+  box.title = text;
 }
 
 document.querySelectorAll(".template-tab").forEach(tab => {
