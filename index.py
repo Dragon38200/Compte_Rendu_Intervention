@@ -89,6 +89,21 @@ CREATE TABLE IF NOT EXISTS logos (
     nom TEXT NOT NULL,
     url TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS demandes_materiel (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_by INTEGER,
+    created_by_email TEXT,
+    affaire TEXT,
+    demandeur TEXT,
+    client TEXT,
+    statut TEXT NOT NULL DEFAULT 'Brouillon',
+    urgence TEXT,
+    livraison TEXT,
+    nb_lignes INTEGER DEFAULT 0,
+    data TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS rapports (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
@@ -142,6 +157,23 @@ _POSTGRES_SCHEMA_STATEMENTS = [
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         nom TEXT NOT NULL,
         url TEXT NOT NULL
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS demandes_materiel (
+        id SERIAL PRIMARY KEY,
+        created_by INTEGER,
+        created_by_email TEXT,
+        affaire TEXT,
+        demandeur TEXT,
+        client TEXT,
+        statut TEXT NOT NULL DEFAULT 'Brouillon',
+        urgence TEXT,
+        livraison TEXT,
+        nb_lignes INTEGER DEFAULT 0,
+        data TEXT NOT NULL DEFAULT '{}',
+        created_at TIMESTAMPTZ DEFAULT now(),
+        updated_at TIMESTAMPTZ DEFAULT now()
     );
     """,
     """
@@ -975,6 +1007,8 @@ def _render_demande_docx(doc, d):
         ("Livraison souhaitée le :", _fr_date(d.get("livraison")) if d.get("livraison") else "N/C"),
         ("Lieu de livraison :", d.get("lieu")),
         ("Urgence :", d.get("urgence") or "Normale"),
+        ("Statut :", d.get("statut")),
+        ("N° de commande :", (d.get("suivi") or {}).get("commande_num")),
     ])
     doc.add_paragraph()
     doc.add_heading("Matériel demandé", level=1)
@@ -1127,6 +1161,7 @@ def _standalone_story_pdf(payload, style_h2, style_body, usable_w):
             ("Chantier / site :", d.get("site")), ("Fournisseur :", d.get("fournisseur")),
             ("Livraison souhaitée le :", _fr_date(d.get("livraison")) if d.get("livraison") else "N/C"),
             ("Lieu de livraison :", d.get("lieu")), ("Urgence :", d.get("urgence") or "Normale"),
+            ("Statut :", d.get("statut")), ("N° de commande :", (d.get("suivi") or {}).get("commande_num")),
         ]))
         story.append(Spacer(1, 8))
         story.append(Paragraph("Matériel demandé", style_h2))
@@ -2866,6 +2901,193 @@ def admin_delete_user(user_id):
         return jsonify({"error": "Utilisateur introuvable."}), 404
     db_execute("DELETE FROM users WHERE id = %s", (user_id,))
     return jsonify({"ok": True})
+
+
+# ======================================================================
+#  SMATI : demandes de matériel (stockage partagé + suivi) et export Excel
+# ======================================================================
+DEMANDE_TEMPLATE_ID = "demande_materiel_smati"
+DEMANDE_STATUTS = ["Brouillon", "À commander", "Commandée", "Expédiée", "Livrée partiellement", "Livrée", "Annulée"]
+
+
+def demande_access_required(f):
+    """login_required + le rôle de l'utilisateur doit donner accès à l'onglet « Demande de matériel »."""
+    @wraps(f)
+    @login_required
+    def wrapper(*args, **kwargs):
+        if DEMANDE_TEMPLATE_ID not in _role_templates(_user_role(g.user_id)):
+            return jsonify({"error": "Votre rôle n'autorise pas l'accès aux demandes de matériel."}), 403
+        return f(*args, **kwargs)
+    return wrapper
+
+
+def _num(v):
+    try:
+        return float(str(v).replace(",", "."))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _clean_demande(d):
+    """Normalise le contenu envoyé par le front avant stockage."""
+    d = d or {}
+    txt = lambda k, n=300: str(d.get(k) or "").strip()[:n]
+    statut = d.get("statut") if d.get("statut") in DEMANDE_STATUTS else "Brouillon"
+    suivi = d.get("suivi") or {}
+    lignes = []
+    for l in (d.get("lignes") or [])[:500]:
+        ligne = {k: str(l.get(k) or "").strip()[:300] for k in ("ref", "designation", "qte", "unite", "observations", "recue")}
+        if ligne["ref"] or ligne["designation"]:
+            lignes.append(ligne)
+    return {
+        "affaire": txt("affaire"), "date": txt("date", 10), "demandeur": txt("demandeur"), "client": txt("client"),
+        "site": txt("site"), "fournisseur": txt("fournisseur"), "livraison": txt("livraison", 10), "lieu": txt("lieu"),
+        "urgence": d.get("urgence") if d.get("urgence") in ("Normale", "Urgente", "Très urgente") else "Normale",
+        "observations": txt("observations", 5000), "statut": statut,
+        "suivi": {
+            "commande_num": str(suivi.get("commande_num") or "").strip()[:100],
+            "commande_date": str(suivi.get("commande_date") or "").strip()[:10],
+            "livraison_reelle": str(suivi.get("livraison_reelle") or "").strip()[:10],
+            "commentaire": str(suivi.get("commentaire") or "").strip()[:2000],
+        },
+        "lignes": lignes,
+    }
+
+
+def _reception_pct(lignes):
+    total = sum(_num(l.get("qte")) for l in lignes)
+    recu = sum(min(_num(l.get("recue")), _num(l.get("qte"))) for l in lignes)
+    return round(100 * recu / total) if total > 0 else 0
+
+
+def _demande_row_to_dict(row, full=True):
+    data = json.loads(row.get("data") or "{}")
+    out = {
+        "id": row["id"], "affaire": row.get("affaire"), "demandeur": row.get("demandeur"), "client": row.get("client"),
+        "statut": row.get("statut"), "urgence": row.get("urgence"), "livraison": row.get("livraison"),
+        "nb_lignes": row.get("nb_lignes") or 0, "created_by_email": row.get("created_by_email"),
+        "created_at": str(row.get("created_at") or ""), "updated_at": str(row.get("updated_at") or ""),
+        "reception_pct": _reception_pct(data.get("lignes") or []),
+    }
+    if full:
+        out["demande"] = data
+    return out
+
+
+@app.get("/api/demandes-materiel")
+@demande_access_required
+def list_demandes():
+    q = (request.args.get("q") or "").strip().lower()
+    statut = (request.args.get("statut") or "").strip()
+    rows = db_fetchall("SELECT * FROM demandes_materiel ORDER BY updated_at DESC, id DESC")
+    out = []
+    for r in rows:
+        if statut and r.get("statut") != statut:
+            continue
+        if q and q not in " ".join(str(r.get(k) or "") for k in ("affaire", "demandeur", "client")).lower():
+            continue
+        out.append(_demande_row_to_dict(r, full=False))
+    return jsonify(out)
+
+
+@app.get("/api/demandes-materiel/<int:demande_id>")
+@demande_access_required
+def get_demande(demande_id):
+    row = db_fetchone("SELECT * FROM demandes_materiel WHERE id = %s", (demande_id,))
+    if not row:
+        return jsonify({"error": "Demande introuvable."}), 404
+    return jsonify(_demande_row_to_dict(row))
+
+
+def _save_demande(demande_id=None):
+    body = request.get_json(force=True, silent=True) or {}
+    d = _clean_demande(body.get("demande"))
+    if not (d["affaire"] or d["client"] or d["lignes"]):
+        return None, (jsonify({"error": "Renseignez au moins le n° d'affaire, le client ou une ligne de matériel."}), 400)
+    user = db_fetchone("SELECT email FROM users WHERE id = %s", (g.user_id,)) or {}
+    now_iso = time.strftime("%Y-%m-%d %H:%M", time.gmtime())
+    historique = []
+    old_statut = None
+    if demande_id:
+        old = db_fetchone("SELECT * FROM demandes_materiel WHERE id = %s", (demande_id,))
+        if not old:
+            return None, (jsonify({"error": "Demande introuvable."}), 404)
+        old_data = json.loads(old.get("data") or "{}")
+        historique = old_data.get("historique") or []
+        old_statut = old.get("statut")
+    if old_statut != d["statut"]:
+        historique.append({"date": now_iso, "statut": d["statut"], "par": user.get("email", "")})
+    d["historique"] = historique[-200:]
+    cols = (d["affaire"], d["demandeur"], d["client"], d["statut"], d["urgence"], d["livraison"], len(d["lignes"]), json.dumps(d, ensure_ascii=False))
+    if demande_id:
+        db_execute(
+            "UPDATE demandes_materiel SET affaire=%s, demandeur=%s, client=%s, statut=%s, urgence=%s, livraison=%s, "
+            "nb_lignes=%s, data=%s, updated_at=CURRENT_TIMESTAMP WHERE id=%s", cols + (demande_id,))
+        new_id = demande_id
+    else:
+        new_id = db_insert_returning_id(
+            "INSERT INTO demandes_materiel (affaire, demandeur, client, statut, urgence, livraison, nb_lignes, data, created_by, created_by_email) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", cols + (g.user_id, user.get("email", "")))
+    row = db_fetchone("SELECT * FROM demandes_materiel WHERE id = %s", (new_id,))
+    return _demande_row_to_dict(row), None
+
+
+@app.post("/api/demandes-materiel")
+@demande_access_required
+def create_demande():
+    result, err = _save_demande()
+    return err if err else (jsonify(result), 201)
+
+
+@app.put("/api/demandes-materiel/<int:demande_id>")
+@demande_access_required
+def update_demande(demande_id):
+    result, err = _save_demande(demande_id)
+    return err if err else jsonify(result)
+
+
+@app.delete("/api/demandes-materiel/<int:demande_id>")
+@demande_access_required
+def delete_demande(demande_id):
+    if not db_fetchone("SELECT id FROM demandes_materiel WHERE id = %s", (demande_id,)):
+        return jsonify({"error": "Demande introuvable."}), 404
+    db_execute("DELETE FROM demandes_materiel WHERE id = %s", (demande_id,))
+    return jsonify({"ok": True})
+
+
+@app.post("/api/export-materiel-xlsx")
+@demande_access_required
+def export_materiel_xlsx():
+    """Excel contenant UNIQUEMENT la liste du matériel (pas l'en-tête de la demande)."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    body = request.get_json(force=True, silent=True) or {}
+    d = _clean_demande(body.get("demande"))
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Liste matériel"
+    heads = ["Référence", "Désignation", "Qté", "Unité", "Observations"]
+    ws.append(heads)
+    for l in d["lignes"]:
+        q = _num(l["qte"])
+        ws.append([l["ref"], l["designation"], (int(q) if q == int(q) else q) if l["qte"] != "" else None, l["unite"], l["observations"]])
+    thin = Side(style="thin", color="E6C3B9")
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor=_SMATI_RED)
+        c.alignment = Alignment(vertical="center")
+    for row in ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=5):
+        for c in row:
+            c.border = Border(top=thin, bottom=thin, left=thin, right=thin)
+    for col, w in zip("ABCDE", (18, 50, 8, 10, 40)):
+        ws.column_dimensions[col].width = w
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = "A1:E%d" % max(ws.max_row, 1)
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(buf, as_attachment=True, download_name="liste_materiel.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @app.get("/api/health")

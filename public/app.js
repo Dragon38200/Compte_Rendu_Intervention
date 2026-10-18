@@ -1545,18 +1545,32 @@ function addDmRow(values = {}) {
     <td><input type="number" class="dm-qte" min="0" step="any" value="1"></td>
     <td><input type="text" class="dm-uni" placeholder="u" list="dmUnits"></td>
     <td><input type="text" class="dm-obs" placeholder="Précision…"></td>
+    <td><input type="number" class="dm-rec" min="0" step="any" placeholder="0"></td>
     <td><button type="button" class="btn-icon dm-del" title="Supprimer la ligne">✕</button></td>`;
   tr.querySelector(".dm-ref").value = values.ref || "";
   tr.querySelector(".dm-des").value = values.designation || "";
   if (values.qte !== undefined) tr.querySelector(".dm-qte").value = values.qte;
   tr.querySelector(".dm-uni").value = values.unite || "";
   tr.querySelector(".dm-obs").value = values.observations || "";
+  tr.querySelector(".dm-rec").value = values.recue || "";
+  tr.querySelectorAll(".dm-qte, .dm-rec").forEach(i => i.addEventListener("input", updateDmReception));
   tr.querySelector(".dm-del").addEventListener("click", () => { tr.remove(); updateDmCount(); });
   $id("dmBody").appendChild(tr);
   updateDmCount();
   return tr;
 }
-function updateDmCount() { $id("dmCount").textContent = $id("dmBody").children.length; }
+function updateDmCount() { $id("dmCount").textContent = $id("dmBody").children.length; updateDmReception(); }
+function updateDmReception() {
+  let total = 0, recu = 0;
+  [...$id("dmBody").children].forEach(tr => {
+    const q = parseFloat(tr.querySelector(".dm-qte").value) || 0;
+    const r = parseFloat(tr.querySelector(".dm-rec").value) || 0;
+    total += q; recu += Math.min(r, q);
+  });
+  const pct = total > 0 ? Math.round(100 * recu / total) : 0;
+  $id("dmRecBar").style.width = pct + "%";
+  $id("dmRecTxt").textContent = pct + " %";
+}
 
 let dmReady = false;
 function initDemandeMateriel() {
@@ -1569,6 +1583,7 @@ function initDemandeMateriel() {
     $id("dmAddRow").addEventListener("click", () => addDmRow().querySelector(".dm-ref").focus());
     $id("dmDate").value = todayISO();
     addDmRow();
+    wireDemandeStorage();
   }
   if (!$id("dmFilename").value) $id("dmFilename").value = `Demande_Materiel_${stampOf()}`;
 }
@@ -1579,13 +1594,115 @@ function getDemandePayload() {
     qte: tr.querySelector(".dm-qte").value,
     unite: tr.querySelector(".dm-uni").value.trim(),
     observations: tr.querySelector(".dm-obs").value.trim(),
+    recue: tr.querySelector(".dm-rec").value,
   })).filter(l => l.ref || l.designation);
   const v = id => $id(id).value.trim();
   return {
     affaire: v("dmAffaire"), date: v("dmDate"), demandeur: v("dmDemandeur"), client: v("dmClient"),
     site: v("dmSite"), fournisseur: v("dmFournisseur"), livraison: v("dmLivraison"), lieu: v("dmLieu"),
     urgence: $id("dmUrgence").value, observations: v("dmObservations"), lignes,
+    statut: $id("dmStatut").value,
+    suivi: { commande_num: v("dmCmdNum"), commande_date: $id("dmCmdDate").value, livraison_reelle: $id("dmLivReelle").value, commentaire: v("dmSuiviCom") },
   };
+}
+
+/* ---- Demandes de matériel : stockage, suivi, export Excel ---- */
+let dmCurrentId = null;
+
+function dmSetForm(d, id) {
+  dmCurrentId = id || null;
+  const set = (el, v) => { $id(el).value = v || ""; };
+  set("dmAffaire", d.affaire); set("dmDate", d.date); set("dmDemandeur", d.demandeur); set("dmClient", d.client);
+  set("dmSite", d.site); set("dmFournisseur", d.fournisseur); set("dmLivraison", d.livraison); set("dmLieu", d.lieu);
+  $id("dmUrgence").value = d.urgence || "Normale";
+  set("dmObservations", d.observations);
+  $id("dmStatut").value = d.statut || "Brouillon";
+  const s = d.suivi || {};
+  set("dmCmdNum", s.commande_num); set("dmCmdDate", s.commande_date); set("dmLivReelle", s.livraison_reelle); set("dmSuiviCom", s.commentaire);
+  $id("dmBody").innerHTML = "";
+  (d.lignes && d.lignes.length ? d.lignes : [{}]).forEach(l => addDmRow(l));
+  updateDmCount();
+  const hist = d.historique || [];
+  $id("dmHistoryBox").hidden = !hist.length;
+  $id("dmHistory").innerHTML = hist.slice().reverse().map(h => `<li>${escHtml(h.date)} — <b>${escHtml(h.statut)}</b>${h.par ? " (" + escHtml(h.par) + ")" : ""}</li>`).join("");
+  $id("dmSave").textContent = id ? "💾 Mettre à jour" : "💾 Enregistrer";
+}
+const escHtml = t => String(t ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+async function dmSave() {
+  try {
+    const body = JSON.stringify({ demande: getDemandePayload() });
+    const saved = dmCurrentId
+      ? await api(`/api/demandes-materiel/${dmCurrentId}`, { method: "PUT", body })
+      : await api("/api/demandes-materiel", { method: "POST", body });
+    dmSetForm(saved.demande, saved.id);
+    setStatus(`Demande enregistrée (n° ${saved.id}) — statut : ${saved.statut}`, "success");
+  } catch (e) { setStatus(`Échec de l'enregistrement : ${e.message}`, "error"); }
+}
+
+async function dmRefreshList() {
+  const box = $id("dmListBody");
+  const qs = new URLSearchParams({ q: $id("dmListQ").value.trim(), statut: $id("dmListStatut").value });
+  try {
+    const rows = await api(`/api/demandes-materiel?${qs}`);
+    if (!rows.length) { box.innerHTML = `<div class="dm-empty">Aucune demande enregistrée.</div>`; return; }
+    box.innerHTML = rows.map(r => `
+      <div class="dm-item" data-id="${r.id}">
+        <div class="t">${escHtml(r.affaire || "Sans n° d'affaire")} — ${escHtml(r.client || "client ?")}</div>
+        <div class="a"><button type="button" class="btn btn-ghost btn-sm" data-act="open">Ouvrir</button><button type="button" class="btn btn-danger-ghost btn-sm" data-act="del">Supprimer</button></div>
+        <div class="s"><span class="dm-badge st-${escHtml(r.statut.split(" ")[0].toLowerCase())}">${escHtml(r.statut)}</span>
+          · ${r.nb_lignes} ligne(s) · reçu ${r.reception_pct} %${r.livraison ? " · livraison " + escHtml(r.livraison.split("-").reverse().join("/")) : ""}
+          ${r.demandeur ? "· " + escHtml(r.demandeur) : ""} · maj ${escHtml(r.updated_at.slice(0, 16))}</div>
+      </div>`).join("");
+  } catch (e) { box.innerHTML = `<div class="dm-empty">${escHtml(e.message)}</div>`; }
+}
+
+function wireDemandeStorage() {
+  $id("dmSave").addEventListener("click", dmSave);
+  $id("dmNew").addEventListener("click", () => {
+    dmSetForm({ date: todayISO(), urgence: "Normale", statut: "Brouillon" }, null);
+    $id("dmFilename").value = `Demande_Materiel_${stampOf()}`;
+    setStatus("Nouvelle demande", "info");
+  });
+  $id("dmOpenList").addEventListener("click", () => { openModal("modalDemandes"); dmRefreshList(); });
+  let t = null;
+  $id("dmListQ").addEventListener("input", () => { clearTimeout(t); t = setTimeout(dmRefreshList, 250); });
+  $id("dmListStatut").addEventListener("change", dmRefreshList);
+  $id("dmListBody").addEventListener("click", async ev => {
+    const btn = ev.target.closest("button[data-act]");
+    if (!btn) return;
+    const id = btn.closest(".dm-item").dataset.id;
+    try {
+      if (btn.dataset.act === "open") {
+        const r = await api(`/api/demandes-materiel/${id}`);
+        dmSetForm(r.demande, r.id);
+        closeAllModals();
+        setStatus(`Demande n° ${r.id} chargée`, "success");
+      } else {
+        const ok = await confirmDialog("Supprimer la demande", "Supprimer définitivement cette demande de matériel ?");
+        if (ok) {
+          await api(`/api/demandes-materiel/${id}`, { method: "DELETE" });
+          if (String(dmCurrentId) === String(id)) dmSetForm({ date: todayISO() }, null);
+        }
+        openModal("modalDemandes");
+        dmRefreshList();
+      }
+    } catch (e) { setStatus(e.message, "error"); }
+  });
+  $id("dmXlsx").addEventListener("click", async () => {
+    try {
+      const resp = await fetch("/api/export-materiel-xlsx", {
+        method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ demande: getDemandePayload() }),
+      });
+      if (!resp.ok) { let m = `Erreur serveur (${resp.status})`; try { m = (await resp.json()).error || m; } catch (_) {} throw new Error(m); }
+      const url = URL.createObjectURL(await resp.blob());
+      const a = document.createElement("a");
+      a.href = url; a.download = `${$id("dmFilename").value.trim() || "Liste_materiel"}_liste.xlsx`;
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      setStatus("Liste de matériel exportée en Excel", "success");
+    } catch (e) { setStatus(`Échec de l'export Excel : ${e.message}`, "error"); }
+  });
 }
 
 /* ---- Planning / Gantt ---- */

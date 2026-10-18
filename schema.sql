@@ -61,3 +61,20 @@ CREATE INDEX IF NOT EXISTS idx_sites_client ON sites(client_id);
 CREATE INDEX IF NOT EXISTS idx_techniciens_user ON techniciens(user_id);
 CREATE INDEX IF NOT EXISTS idx_logos_user ON logos(user_id);
 CREATE INDEX IF NOT EXISTS idx_rapports_user ON rapports(user_id);
+
+-- Demandes de matériel SMATI (stockage partagé + suivi)
+CREATE TABLE IF NOT EXISTS demandes_materiel (
+    id SERIAL PRIMARY KEY,
+    created_by INTEGER,
+    created_by_email TEXT,
+    affaire TEXT,
+    demandeur TEXT,
+    client TEXT,
+    statut TEXT NOT NULL DEFAULT 'Brouillon',
+    urgence TEXT,
+    livraison TEXT,
+    nb_lignes INTEGER DEFAULT 0,
+    data TEXT NOT NULL DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);

@@ -321,7 +321,7 @@
       </div>
 
       <table class="items-table dm-table" id="dmTable">
-        <thead><tr><th style="width:15%">Référence</th><th>Désignation</th><th style="width:8%">Qté</th><th style="width:10%">Unité</th><th style="width:24%">Observations</th><th style="width:4%"></th></tr></thead>
+        <thead><tr><th style="width:15%">Référence</th><th>Désignation</th><th style="width:8%">Qté</th><th style="width:10%">Unité</th><th style="width:20%">Observations</th><th style="width:8%">Reçu</th><th style="width:4%"></th></tr></thead>
         <tbody id="dmBody"></tbody>
       </table>
       <div class="items-actions">
@@ -333,14 +333,37 @@
         <label>OBSERVATIONS</label>
         <textarea id="dmObservations" rows="3" placeholder="Précisions pour l'achat, contraintes de livraison…"></textarea>
       </div>
+      <h2 class="panel-title" style="margin-top:14px">📍 Suivi de la demande</h2>
+      <div class="grid-3">
+        <div class="field"><label>STATUT</label>
+          <select id="dmStatut">
+            <option>Brouillon</option><option>À commander</option><option>Commandée</option><option>Expédiée</option>
+            <option>Livrée partiellement</option><option>Livrée</option><option>Annulée</option>
+          </select>
+        </div>
+        <div class="field"><label>N° DE COMMANDE</label><input type="text" id="dmCmdNum" placeholder="Ex: CMD-2026-118"></div>
+        <div class="field"><label>DATE DE COMMANDE</label><input type="date" id="dmCmdDate"></div>
+        <div class="field"><label>LIVRAISON RÉELLE LE</label><input type="date" id="dmLivReelle"></div>
+        <div class="field"><label>RÉCEPTION</label><div class="dm-progress"><div class="dm-progress-bar" id="dmRecBar"></div><span id="dmRecTxt">0 %</span></div></div>
+        <div class="field"><label>COMMENTAIRE DE SUIVI</label><input type="text" id="dmSuiviCom" placeholder="Retard, reliquat, contact fournisseur…"></div>
+      </div>
+      <details class="dm-history" id="dmHistoryBox" hidden>
+        <summary>Historique des statuts</summary>
+        <ul id="dmHistory"></ul>
+      </details>
+
       <div class="field"><label>NOM DU FICHIER</label><input type="text" id="dmFilename"></div>
 
       <div class="smati-doc-actions">
         <span class="status-label status-info" data-mirror-status>Prêt</span>
         <div class="bottom-actions">
+          <button type="button" class="btn btn-ghost" id="dmNew">🆕 Nouvelle</button>
+          <button type="button" class="btn btn-ghost" id="dmOpenList">📂 Mes demandes</button>
+          <button type="button" class="btn btn-accent" id="dmSave">💾 Enregistrer</button>
+          <button type="button" class="btn btn-ghost" id="dmXlsx">📊 Export Excel (liste)</button>
           <button type="button" class="btn btn-ghost" data-proxy="btnGeneratePdf">📑 Export PDF</button>
           <button type="button" class="btn btn-ghost" data-proxy="btnEmailReport">✉️ Envoyer par email</button>
-          <button type="button" class="btn btn-accent" data-proxy="btnGenerate">📄 Générer (.docx)</button>
+          <button type="button" class="btn btn-ghost" data-proxy="btnGenerate">📄 Générer (.docx)</button>
         </div>
       </div>
     </section>
@@ -432,6 +455,17 @@
 </div>
 
 <!-- Signatures -->
+<div id="modalDemandes" class="modal hidden">
+  <div class="modal-header"><h3>Demandes de matériel</h3><button class="modal-close" data-close>✕</button></div>
+  <div class="modal-body">
+    <div class="dm-filters">
+      <input type="text" id="dmListQ" placeholder="Rechercher (affaire, client, demandeur)…">
+      <select id="dmListStatut"><option value="">Tous les statuts</option><option>Brouillon</option><option>À commander</option><option>Commandée</option><option>Expédiée</option><option>Livrée partiellement</option><option>Livrée</option><option>Annulée</option></select>
+    </div>
+    <div id="dmListBody" class="dm-list"></div>
+  </div>
+</div>
+
 <div id="modalSignatures" class="modal hidden">
   <div class="modal-header"><h3>Signatures du rapport</h3><button class="modal-close" data-close>✕</button></div>
   <div class="modal-body">

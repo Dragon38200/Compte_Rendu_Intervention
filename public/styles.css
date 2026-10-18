@@ -713,3 +713,27 @@ label.checkbox-inline input[type="checkbox"] {
 .lg-done { background: var(--c-main, #D9251D); } .lg-todo { background: var(--c-2-light, #F6A53B); } .lg-today { background: #fff; border: 2px solid #1D4ED8; box-sizing: border-box; }
 .theme-smati .dm-del, .theme-smati .pl-del { background: var(--c-tint); color: var(--c-dark); border: 1px solid var(--c-border); }
 .theme-smati .dm-del:hover, .theme-smati .pl-del:hover { background: var(--c-main); color: #fff; }
+
+/* Suivi des demandes de matériel */
+.dm-table input.dm-rec { text-align: right; }
+.dm-progress { position: relative; height: 34px; border: 1px solid var(--c-border, var(--border)); border-radius: 8px; background: #fff; overflow: hidden; }
+.dm-progress-bar { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--c-2-light, #F6A53B); transition: width .3s; }
+.dm-progress span { position: relative; display: block; text-align: center; line-height: 32px; font-weight: 700; font-size: 13px; color: var(--c-dark, #333); }
+.dm-history { margin: 4px 0 12px; font-size: 12.5px; color: var(--text-muted); }
+.dm-history summary { cursor: pointer; font-weight: 600; }
+.dm-history ul { margin: 6px 0 0 18px; padding: 0; }
+.dm-filters { display: flex; gap: 10px; margin-bottom: 12px; }
+.dm-filters input { flex: 1; }
+.dm-list { display: flex; flex-direction: column; gap: 8px; max-height: 55vh; overflow: auto; }
+.dm-item { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 10px 12px; border: 1px solid var(--c-border, var(--border)); border-radius: 10px; background: var(--c-surface, #fff); }
+.dm-item .t { font-weight: 700; }
+.dm-item .s { font-size: 12px; color: var(--text-muted); }
+.dm-item .a { display: flex; gap: 6px; align-items: center; grid-row: span 2; }
+.dm-badge { display: inline-block; padding: 2px 9px; border-radius: 99px; font-size: 11.5px; font-weight: 700; background: var(--c-tint, #eee); color: var(--c-dark, #333); border: 1px solid var(--c-border, #ddd); }
+.dm-badge.st-livrée { background: #E3F4E1; color: #1F6B2A; border-color: #B8DDB4; }
+.dm-badge.st-annulée { background: #EEE; color: #666; border-color: #CCC; }
+.dm-badge.st-commandée, .dm-badge.st-expédiée { background: #FFF1D6; color: #8A5200; border-color: #F2D08F; }
+.dm-empty { padding: 24px; text-align: center; color: var(--text-muted); }
+.dm-filters input { flex: 1 1 auto; width: auto; min-width: 0; }
+.dm-filters select { flex: 0 0 200px; width: 200px; }
+.theme-smati .modal-header h3 { color: var(--c-dark); }
