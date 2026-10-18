@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'mounier',
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS clients (
@@ -106,9 +107,12 @@ _POSTGRES_SCHEMA_STATEMENTS = [
         id SERIAL PRIMARY KEY,
         email TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'mounier',
         created_at TIMESTAMPTZ DEFAULT now()
     );
     """,
+    # Migration des bases existantes : ajoute la colonne "role" si absente.
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'mounier';",
     """
     CREATE TABLE IF NOT EXISTS clients (
         id SERIAL PRIMARY KEY,
@@ -199,6 +203,10 @@ def _ensure_sqlite_schema():
     conn = sqlite3.connect(SQLITE_PATH)
     try:
         conn.executescript(_SQLITE_SCHEMA)
+        try:  # migration des bases existantes
+            conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'mounier'")
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
     finally:
         conn.close()
@@ -320,6 +328,36 @@ def _current_user_id():
         return None
     data = auth_decode_token(token)
     return data["sub"] if data else None
+
+
+# ----------------------------------------------------------------------
+#  Rôles : droits d'accès aux onglets (types de rapport)
+# ----------------------------------------------------------------------
+ALL_TEMPLATE_IDS = ("intervention", "verif_armoire", "prep_intervention", "crealis", "verif_armoire_crealis")
+ROLE_TEMPLATES = {
+    "admin": ALL_TEMPLATE_IDS,
+    "crealis": ("crealis",),
+    "smati": ("verif_armoire_crealis",),
+    "mounier": ("intervention", "verif_armoire", "prep_intervention"),
+}
+DEFAULT_ROLE = "mounier"
+
+
+def _role_templates(role):
+    return list(ROLE_TEMPLATES.get(role, ROLE_TEMPLATES[DEFAULT_ROLE]))
+
+
+def _user_role(user_id):
+    row = db_fetchone("SELECT role FROM users WHERE id = %s", (user_id,))
+    return (row or {}).get("role") or DEFAULT_ROLE
+
+
+def _check_template_allowed(payload):
+    """Renvoie une réponse 403 si le rôle de l'utilisateur n'a pas accès à l'onglet demandé."""
+    tpl = (payload or {}).get("template") or DEFAULT_TEMPLATE_ID
+    if tpl not in _role_templates(_user_role(g.user_id)):
+        return jsonify({"error": "Votre rôle n'autorise pas ce type de rapport."}), 403
+    return None
 
 
 def login_required(f):
@@ -1873,7 +1911,7 @@ def register():
         (email, auth_hash_password(password)),
     )
     token = auth_create_token(user_id, email)
-    resp = jsonify({"id": user_id, "email": email})
+    resp = jsonify({"id": user_id, "email": email, "role": DEFAULT_ROLE, "templates": _role_templates(DEFAULT_ROLE)})
     _set_auth_cookie(resp, token)
     return resp
 
@@ -1884,12 +1922,12 @@ def login():
     email = (data.get("email") or "").strip().lower()
     password = data.get("password") or ""
 
-    user = db_fetchone("SELECT id, email, password_hash FROM users WHERE email = %s", (email,))
+    user = db_fetchone("SELECT id, email, password_hash, role FROM users WHERE email = %s", (email,))
     if not user or not auth_verify_password(password, user["password_hash"]):
         return jsonify({"error": "Email ou mot de passe incorrect."}), 401
 
     token = auth_create_token(user["id"], user["email"])
-    resp = jsonify({"id": user["id"], "email": user["email"]})
+    resp = jsonify({"id": user["id"], "email": user["email"], "role": user["role"], "templates": _role_templates(user["role"])})
     _set_auth_cookie(resp, token)
     return resp
 
@@ -1904,9 +1942,10 @@ def logout():
 @app.get("/api/auth/me")
 @login_required
 def me():
-    user = db_fetchone("SELECT id, email FROM users WHERE id = %s", (g.user_id,))
+    user = db_fetchone("SELECT id, email, role FROM users WHERE id = %s", (g.user_id,))
     if not user:
         return jsonify({"error": "Utilisateur introuvable"}), 404
+    user["templates"] = _role_templates(user["role"])
     return jsonify(user)
 
 
@@ -2135,6 +2174,9 @@ def generate_report():
         payload = json.loads(raw_payload)
     except ValueError:
         return jsonify({"error": "payload JSON invalide"}), 400
+    denied = _check_template_allowed(payload)
+    if denied:
+        return denied
 
     photos = []
     i = 0
@@ -2191,6 +2233,9 @@ def generate_report_pdf():
         payload = json.loads(raw_payload)
     except ValueError:
         return jsonify({"error": "payload JSON invalide"}), 400
+    denied = _check_template_allowed(payload)
+    if denied:
+        return denied
 
     photos = []
     i = 0
@@ -2244,6 +2289,9 @@ def send_report_email():
         payload = json.loads(raw_payload)
     except ValueError:
         return jsonify({"error": "payload JSON invalide"}), 400
+    denied = _check_template_allowed(payload)
+    if denied:
+        return denied
 
     email_to = (request.form.get("email_to") or "").strip()
     if not email_to or "@" not in email_to:
@@ -2368,7 +2416,7 @@ def admin_stats():
 @app.get("/api/admin/users")
 @admin_required
 def admin_list_users():
-    users = db_fetchall("SELECT id, email, created_at FROM users ORDER BY created_at DESC, id DESC")
+    users = db_fetchall("SELECT id, email, role, created_at FROM users ORDER BY created_at DESC, id DESC")
     for u in users:
         counts = db_fetchone(
             "SELECT "
@@ -2383,6 +2431,19 @@ def admin_list_users():
         u["logos"] = int(counts["logos"]) if counts else 0
         u["rapports"] = int(counts["rapports"]) if counts else 0
     return jsonify(users)
+
+
+@app.patch("/api/admin/users/<int:user_id>/role")
+@admin_required
+def admin_set_user_role(user_id):
+    data = request.get_json(force=True, silent=True) or {}
+    role = (data.get("role") or "").strip().lower()
+    if role not in ROLE_TEMPLATES:
+        return jsonify({"error": "Rôle invalide."}), 400
+    if not db_fetchone("SELECT id FROM users WHERE id = %s", (user_id,)):
+        return jsonify({"error": "Utilisateur introuvable."}), 404
+    db_execute("UPDATE users SET role = %s WHERE id = %s", (role, user_id))
+    return jsonify({"ok": True, "role": role})
 
 
 @app.delete("/api/admin/users/<int:user_id>")

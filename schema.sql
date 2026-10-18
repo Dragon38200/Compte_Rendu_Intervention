@@ -7,8 +7,10 @@ CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'mounier',
     created_at TIMESTAMPTZ DEFAULT now()
 );
+-- Bases existantes : ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'mounier';
 
 CREATE TABLE IF NOT EXISTS clients (
     id SERIAL PRIMARY KEY,

@@ -81,11 +81,18 @@
     });
   }
 
+  const ROLES = [
+    { id: "admin", label: "admin (tous les onglets)" },
+    { id: "mounier", label: "mounier (3 premiers onglets)" },
+    { id: "crealis", label: "crealis (onglet Crealis)" },
+    { id: "smati", label: "smati (onglet SMATI)" },
+  ];
+
   function renderUsers(users) {
     usersBody.innerHTML = "";
     if (!users.length) {
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td colspan="7" class="admin-empty">Aucun utilisateur pour le moment.</td>`;
+      tr.innerHTML = `<td colspan="8" class="admin-empty">Aucun utilisateur pour le moment.</td>`;
       usersBody.appendChild(tr);
       return;
     }
@@ -93,6 +100,7 @@
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td>${u.email}</td>
+        <td><select class="role-select" data-role-id="${u.id}">${ROLES.map(r => `<option value="${r.id}"${r.id === u.role ? " selected" : ""}>${r.label}</option>`).join("")}</select></td>
         <td class="muted">${formatDate(u.created_at)}</td>
         <td>${u.clients}</td>
         <td>${u.techniciens}</td>
@@ -101,6 +109,23 @@
         <td><button class="btn btn-danger-ghost btn-sm" data-id="${u.id}" data-email="${u.email}">Supprimer</button></td>
       `;
       usersBody.appendChild(tr);
+    });
+
+    usersBody.querySelectorAll("select[data-role-id]").forEach((sel) => {
+      const previous = sel.value;
+      sel.addEventListener("change", async () => {
+        sel.disabled = true;
+        try {
+          await api(`/api/admin/users/${sel.getAttribute("data-role-id")}/role`, {
+            method: "PATCH", body: JSON.stringify({ role: sel.value }),
+          });
+          sel.dataset.prev = sel.value;
+        } catch (e) {
+          window.alert(e.message || "Erreur lors du changement de rôle.");
+          sel.value = sel.dataset.prev || previous;
+        }
+        sel.disabled = false;
+      });
     });
 
     usersBody.querySelectorAll("button[data-id]").forEach((btn) => {

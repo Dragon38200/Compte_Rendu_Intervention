@@ -123,8 +123,23 @@ document.getElementById("btnLogout").addEventListener("click", async () => {
   location.reload();
 });
 
+// Rôle : n'affiche que les onglets autorisés et bascule sur le premier.
+function applyRoleTabs() {
+  const allowed = (state.user && state.user.templates) || ["intervention", "verif_armoire", "prep_intervention"];
+  state.allowedTemplates = allowed;
+  document.querySelectorAll(".template-tab").forEach(t => {
+    t.classList.toggle("hidden", !allowed.includes(t.dataset.template));
+  });
+  if (!allowed.includes(state.template)) {
+    state.template = allowed[0];
+  }
+  document.querySelectorAll(".template-tab").forEach(t => t.classList.toggle("active", t.dataset.template === state.template));
+  applyTemplateVisibility(state.template);
+}
+
 async function enterApp(user) {
   state.user = user;
+  applyRoleTabs();
   document.getElementById("userEmail").textContent = user.email;
   authScreen.classList.add("hidden");
   appScreen.classList.remove("hidden");
@@ -1398,8 +1413,8 @@ document.getElementById("btnReset").addEventListener("click", async () => {
   ["fFolder", "fTechnicien", "fClient", "fSite", "fAdresse", "fContact", "fEquipement", "fSerie", "fObservations"]
     .forEach(id => { document.getElementById(id).value = ""; });
   document.getElementById("fIncludeMap").checked = false;
-  state.template = "intervention";
-  document.querySelectorAll(".template-tab").forEach(t => t.classList.toggle("active", t.dataset.template === "intervention"));
+  state.template = (state.allowedTemplates && state.allowedTemplates[0]) || "intervention";
+  document.querySelectorAll(".template-tab").forEach(t => t.classList.toggle("active", t.dataset.template === state.template));
   setDefaultDateAndFilename();
 
   itemsBody.innerHTML = "";
@@ -1407,7 +1422,7 @@ document.getElementById("btnReset").addEventListener("click", async () => {
   buildItemsTableEmptyRow();
 
   resetArmoireChecklist();
-  applyTemplateVisibility("intervention");
+  applyTemplateVisibility(state.template);
 
   state.gallery = [];
   renderGallery();
