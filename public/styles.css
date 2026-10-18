@@ -593,56 +593,98 @@ label.checkbox-inline input[type="checkbox"] {
   --success: #3E9B3A;
   --danger: #D6274B;
   --warning: #E39B0B;
+  /* Palette du thème (surchargée par .theme-smati) */
+  --c-main: #0A8FD8; --c-main-rgb: 10, 143, 216;
+  --c-dark: #0B6FB8; --c-dark-rgb: 11, 111, 184;
+  --c-2: #3E9B3A; --c-2-light: #5DB83A; --c-2-rgb: 93, 184, 58;
+  --c-tint: #E6F0F8; --c-tint2: #EDF3F9; --c-surface: #F7FAFD;
+  --c-border: #B9CCDD; --c-dash: #8FB8D8; --c-line-rgb: 0, 94, 160;
+  --c-bg-top: #EAF4FB;
 }
-.theme-crealis body { background: linear-gradient(180deg, #EAF4FB 0%, #F2F7FB 240px); }
+.theme-crealis body { background: linear-gradient(180deg, var(--c-bg-top) 0%, var(--bg) 240px); }
 .theme-crealis input, .theme-crealis textarea, .theme-crealis select {
-  background-color: #FFFFFF; border-color: #B9CCDD; color: var(--text);
+  background-color: #FFFFFF; border-color: var(--c-border); color: var(--text);
 }
 .theme-crealis input:focus, .theme-crealis textarea:focus, .theme-crealis select:focus {
-  border-color: var(--accent); box-shadow: 0 0 0 3px rgba(10, 143, 216, 0.15); outline: none;
+  border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--c-main-rgb), 0.15); outline: none;
 }
-.theme-crealis label, .theme-crealis .panel-title { color: #0B6FB8; }
-.theme-crealis .topbar { background: rgba(255, 255, 255, 0.92); box-shadow: 0 1px 0 rgba(0, 94, 160, 0.1); }
-.theme-crealis .topbar-brand { color: #0B6FB8; }
-.theme-crealis .template-tabs { background: #FFFFFF; border-color: rgba(0, 94, 160, 0.16); }
-.theme-crealis .template-tab { color: #5B7489; }
-.theme-crealis .template-tab:hover { color: #0B6FB8; }
-.theme-crealis .template-tab.active { background: linear-gradient(135deg, #0A8FD8, #0B6FB8); color: #FFFFFF; }
-.theme-crealis .panel { box-shadow: 0 2px 10px rgba(11, 111, 184, 0.07); }
-.theme-crealis .btn-primary { background: linear-gradient(135deg, #0A8FD8, #0B6FB8); }
-.theme-crealis .btn-accent { background: linear-gradient(135deg, #5DB83A, #3E9B3A); }
-.theme-crealis .btn-ghost { background: #E6F0F8; color: #0B6FB8; }
+.theme-crealis label, .theme-crealis .panel-title { color: var(--c-dark); }
+.theme-crealis .topbar { background: rgba(255, 255, 255, 0.92); box-shadow: 0 1px 0 rgba(var(--c-line-rgb), 0.1); }
+.theme-crealis .topbar-brand { color: var(--c-dark); }
+.theme-crealis .template-tabs { background: #FFFFFF; border-color: rgba(var(--c-line-rgb), 0.16); }
+.theme-crealis .template-tab { color: var(--text-muted); }
+.theme-crealis .template-tab:hover { color: var(--c-dark); }
+.theme-crealis .template-tab.active { background: linear-gradient(135deg, var(--c-main), var(--c-dark)); color: #FFFFFF; }
+.theme-crealis .panel { box-shadow: 0 2px 10px rgba(var(--c-dark-rgb), 0.07); }
+.theme-crealis .btn-primary { background: linear-gradient(135deg, var(--c-main), var(--c-dark)); }
+.theme-crealis .btn-accent { background: linear-gradient(135deg, var(--c-2-light), var(--c-2)); }
+.theme-crealis .btn-ghost { background: var(--c-tint); color: var(--c-dark); }
 .theme-crealis .btn-danger-ghost { background: #FDECEF; color: #C0223F; }
-.theme-crealis .items-table th { color: #0B6FB8; }
-.theme-crealis .items-table td { border-bottom-color: rgba(0, 94, 160, 0.1); }
-.theme-crealis .items-total strong { color: #3E9B3A; }
+.theme-crealis .items-table th { color: var(--c-dark); }
+.theme-crealis .items-table td { border-bottom-color: rgba(var(--c-line-rgb), 0.1); }
+.theme-crealis .items-total strong { color: var(--c-2); }
 .theme-crealis .status-label { color: var(--text-muted); }
 .theme-crealis .modal { background: #FFFFFF; }
-.theme-crealis .modal-list-item { color: var(--text); border-bottom-color: rgba(0, 94, 160, 0.1); }
-.theme-crealis ::-webkit-scrollbar-thumb { background: rgba(11, 111, 184, 0.3); }
-.theme-crealis .logo-zone, .theme-crealis .photo-zone { border-color: #8FB8D8; background: #F2F8FC; }
-.theme-crealis .photo-zone.dragover { background: rgba(10, 143, 216, 0.1); color: var(--text); }
+.theme-crealis .modal-list-item { color: var(--text); border-bottom-color: rgba(var(--c-line-rgb), 0.1); }
+.theme-crealis ::-webkit-scrollbar-thumb { background: rgba(var(--c-dark-rgb), 0.3); }
+.theme-crealis .logo-zone, .theme-crealis .photo-zone { border-color: var(--c-dash); background: var(--c-surface); }
+.theme-crealis .photo-zone.dragover { background: rgba(var(--c-main-rgb), 0.1); color: var(--text); }
 .theme-crealis .logo-empty, .theme-crealis .photo-zone { color: var(--text-muted); }
 .theme-crealis .topbar-brand .brand-icon { width: auto; height: 38px; border-radius: 0; }
 
 /* Grille de vérification armoire en thème clair */
-.theme-crealis .armoire-section { background: #F7FAFD; }
-.theme-crealis .armoire-section-header { background: linear-gradient(135deg, rgba(10,143,216,0.12), rgba(93,184,58,0.10)); }
-.theme-crealis .armoire-section-title { color: #0B6FB8; }
-.theme-crealis .armoire-item { border-bottom-color: rgba(0, 94, 160, 0.1); }
+.theme-crealis .armoire-section { background: var(--c-surface); }
+.theme-crealis .armoire-section-header { background: linear-gradient(135deg, rgba(var(--c-main-rgb), 0.12), rgba(var(--c-2-rgb), 0.10)); }
+.theme-crealis .armoire-section-title { color: var(--c-dark); }
+.theme-crealis .armoire-item { border-bottom-color: rgba(var(--c-line-rgb), 0.1); }
 .theme-crealis .armoire-item-label { color: var(--text); }
 .theme-crealis .armoire-item.has-nok .armoire-item-label { color: #C0223F; }
-.theme-crealis .armoire-section-count { background: #E6F0F8; color: #5B7489; }
+.theme-crealis .armoire-section-count { background: var(--c-tint); color: var(--text-muted); }
 .theme-crealis .armoire-section-count.has-nok { background: #FDECEF; color: #C0223F; }
 .theme-crealis .armoire-section-count.complete:not(.has-nok) { background: #E3F4DD; color: #2F7D2C; }
 .theme-crealis .armoire-reg-badge { color: #8A5A00; background: #FFF3D6; border-color: #F0C86A; }
-.theme-crealis .seg-btn { background: #EDF3F9; color: #5B7489; border-right-color: #B9CCDD; }
-.theme-crealis .seg-btn:hover { color: #0B6FB8; }
+.theme-crealis .seg-btn { background: var(--c-tint2); color: var(--text-muted); border-right-color: var(--c-border); }
+.theme-crealis .seg-btn:hover { color: var(--c-dark); }
 .theme-crealis .seg-btn.seg-ok.active { background: #3E9B3A; color: #FFFFFF; }
 .theme-crealis .seg-btn.seg-nok.active { background: #D6274B; color: #FFFFFF; }
 .theme-crealis .seg-btn.seg-so.active { background: #8FA6B8; color: #FFFFFF; }
-.theme-crealis .armoire-notation { background: #F7FAFD; }
-.theme-crealis .armoire-notation-badge.verdict-pending { background: #E6F0F8; color: #5B7489; }
+.theme-crealis .armoire-notation { background: var(--c-surface); }
+.theme-crealis .armoire-notation-badge.verdict-pending { background: var(--c-tint); color: var(--text-muted); }
 .theme-crealis .armoire-notation-badge.verdict-ok { background: #E3F4DD; color: #2F7D2C; }
 .theme-crealis .armoire-notation-badge.verdict-warn { background: #FFF3D6; color: #8A5A00; }
 .theme-crealis .armoire-notation-badge.verdict-refuse { background: #FDECEF; color: #C0223F; }
+
+/* ---------------- Thème « SMATI » (rouge / orange) ----------------
+   Même base claire que Crealis, palette tirée du logo SMATI, avec fond
+   animé 3D (voir smati-bg.js) visible à travers des panneaux translucides. */
+:root.theme-smati {
+  --bg: #FBF4F0;
+  --text: #3A1F1B;
+  --text-muted: #8A6A63;
+  --border: #E6C3B9;
+  --border-soft: rgba(169, 27, 20, 0.18);
+  --accent: #D9251D;
+  --accent-2: #A91B14;
+  --c-main: #D9251D; --c-main-rgb: 217, 37, 29;
+  --c-dark: #A91B14; --c-dark-rgb: 169, 27, 20;
+  --c-2: #E8760C; --c-2-light: #F6A53B; --c-2-rgb: 232, 118, 12;
+  --c-tint: #FCE9E3; --c-tint2: #FBEFEA; --c-surface: #FFF9F6;
+  --c-border: #E6C3B9; --c-dash: #EBA999; --c-line-rgb: 169, 27, 20;
+  --c-bg-top: #FDEDE6;
+}
+.theme-smati body { background: transparent; }
+.theme-smati .topbar { background: rgba(255, 255, 255, 0.86); backdrop-filter: blur(6px); }
+.theme-smati .template-tabs { background: rgba(255, 255, 255, 0.9); }
+.theme-smati .panel { background: rgba(255, 255, 255, 0.72); backdrop-filter: blur(3px); }
+.theme-smati input, .theme-smati textarea, .theme-smati select { background-color: rgba(255, 255, 255, 0.92); }
+.theme-smati .armoire-section, .theme-smati .armoire-notation { background: rgba(255, 249, 246, 0.78); }
+.theme-smati .logo-zone, .theme-smati .photo-zone { background: rgba(255, 249, 246, 0.75); }
+.theme-smati .btn-ghost { background: var(--c-tint); }
+
+/* Canevas du fond 3D (onglet SMATI) : derrière tout le contenu, sans capter la souris */
+#bgCanvas {
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  opacity: 0; transition: opacity 0.8s ease;
+}
+#bgCanvas.visible { opacity: 0.75; }
+#bgCanvas canvas { display: block; width: 100% !important; height: 100% !important; }

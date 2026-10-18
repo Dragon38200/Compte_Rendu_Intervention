@@ -1452,6 +1452,10 @@ function applyTemplateVisibility(template) {
   // Thème clair bleu/vert propre à l'onglet Crealis.
   document.documentElement.classList.toggle("theme-crealis", isCrealisTemplate(template));
   applyBrandForTemplate(template);
+  // Onglet SMATI : palette rouge/orange + fond animé 3D (uniquement ici).
+  const isSmati = template === "verif_armoire_crealis";
+  document.documentElement.classList.toggle("theme-smati", isSmati);
+  if (window.SmatiBg) { isSmati ? window.SmatiBg.start() : window.SmatiBg.stop(); }
 }
 
 // Bandeau du haut : logo + titre spécifiques à l'onglet Crealis (Climalife),
