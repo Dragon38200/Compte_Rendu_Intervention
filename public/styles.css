@@ -676,11 +676,12 @@ label.checkbox-inline input[type="checkbox"] {
 
 /* Vignette 3D animée (onglet SMATI) : dans l'espace libre sous les boutons */
 #smatiThumb {
-  display: none; position: relative; height: 240px; margin-top: 14px;
+  display: none; position: relative; flex: 1 1 auto; min-height: 240px; margin-top: 14px;
   border: 1px solid var(--c-border); border-radius: 12px; overflow: hidden;
   background: radial-gradient(circle at 50% 40%, #FFF9F6, #F6D9CF);
   opacity: 0; transition: opacity 0.8s ease;
 }
 .theme-smati #smatiThumb { display: block; }
 #smatiThumb.visible { opacity: 1; }
-#smatiThumb canvas { display: block; width: 100% !important; height: 100% !important; }
+#smatiThumb canvas { position: absolute; inset: 0; display: block; width: 100% !important; height: 100% !important; }
+.theme-smati .panel:has(> #smatiThumb) { display: flex; flex-direction: column; }
