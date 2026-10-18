@@ -1067,6 +1067,7 @@ def _render_demande_docx(doc, d):
 
 
 def _render_planning_docx(doc, pl):
+    pl = _clean_planning(pl)   # mêmes règles que le stockage (liens http(s) uniquement, tailles bornées)
     _docx_kv_table(doc, [
         ("Projet / affaire :", pl.get("projet")),
         ("N° d'affaire :", pl.get("affaire")),
@@ -1168,6 +1169,17 @@ def _render_planning_docx(doc, pl):
         for i, w in enumerate(widths):
             row.cells[i].width = w
 
+    docs_tasks = [t for t in tasks if t.get("docs") or t.get("notes")]
+    if docs_tasks:
+        doc.add_heading("Notes et documents associés", level=1)
+        for t in docs_tasks:
+            p = doc.add_paragraph()
+            p.add_run(t.get("nom") or "Sans titre").bold = True
+            if t.get("notes"):
+                doc.add_paragraph(t["notes"])
+            for d in t.get("docs") or []:
+                doc.add_paragraph("• %s : %s" % (d.get("nom", ""), d.get("url", "")))
+
 
 def _standalone_story_pdf(payload, style_h2, style_body, usable_w):
     """Contenu PDF (liste de flowables reportlab) des onglets SMATI autonomes."""
@@ -1224,7 +1236,7 @@ def _standalone_story_pdf(payload, style_h2, style_body, usable_w):
         story.append(Paragraph(_xml_escape((d.get("observations") or "").strip()) or "Aucune observation particulière.", style_body))
         return story
 
-    pl = payload.get("planning") or {}
+    pl = _clean_planning(payload.get("planning"))
     story.append(kv_table([
         ("Projet / affaire :", pl.get("projet")), ("N° d'affaire :", pl.get("affaire")),
         ("Client :", pl.get("client")), ("Responsable du planning :", pl.get("responsable")),
@@ -1306,6 +1318,18 @@ def _standalone_story_pdf(payload, style_h2, style_body, usable_w):
         ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
     ] + extra))
     story.append(dt)
+    docs_tasks = [t for t in tasks if t.get("docs") or t.get("notes")]
+    if docs_tasks:
+        story.append(Spacer(1, 8))
+        story.append(Paragraph("Notes et documents associés", style_h2))
+        for t in docs_tasks:
+            story.append(Paragraph("<b>%s</b>" % _xml_escape(t.get("nom") or "Sans titre"), style_body))
+            if t.get("notes"):
+                story.append(Paragraph(_xml_escape(t["notes"]).replace("\n", "<br/>"), small))
+            for d in t.get("docs") or []:
+                href = _xml_escape(d.get("url", "")).replace('"', "%22")
+                story.append(Paragraph('&bull; <link href="%s" color="#A91B14">%s</link>' % (href, _xml_escape(d.get("nom") or d.get("url", ""))), small))
+            story.append(Spacer(1, 3))
     return story
 
 
@@ -2661,7 +2685,8 @@ def local_blob(key):
     data = blob_read_local(key)
     if data is None:
         return jsonify({"error": "Introuvable"}), 404
-    return send_file(io.BytesIO(data), mimetype="application/octet-stream")
+    mime = "application/pdf" if key.lower().endswith(".pdf") else "application/octet-stream"
+    return send_file(io.BytesIO(data), mimetype=mime)
 
 
 @app.post("/api/generate")
@@ -3173,6 +3198,13 @@ def _clean_planning(p):
         tache["debut"], tache["fin"] = tache["debut"][:10], tache["fin"][:10]
         for k, _label in PLANNING_CHECKS:
             tache[k] = bool(t.get(k))
+        tache["notes"] = str(t.get("notes") or "").strip()[:3000]
+        docs = []
+        for d in (t.get("docs") or [])[:20]:
+            url = str((d or {}).get("url") or "").strip()
+            if url.startswith(("https://", "http://", "/local-blob/")):
+                docs.append({"nom": str((d or {}).get("nom") or url).strip()[:200], "url": url[:1000]})
+        tache["docs"] = docs
         if tache["nom"] or tache["debut"] or tache["fin"]:
             taches.append(tache)
     return {"projet": txt("projet"), "affaire": txt("affaire"), "client": txt("client"), "responsable": txt("responsable"), "taches": taches}
@@ -3194,6 +3226,31 @@ def _planning_row_to_dict(row, full=True):
     if full:
         out["planning"] = data
     return out
+
+
+PDF_MAX_BYTES = int(4.3 * 1024 * 1024)   # marge sous la limite de 4,5 Mo des fonctions Vercel
+
+
+@app.post("/api/plannings/upload-pdf")
+@planning_access_required
+def upload_planning_pdf():
+    """Envoie un PDF (document d'une affaire) vers le stockage Blob et renvoie son lien."""
+    file = request.files.get("fichier")
+    if not file:
+        return jsonify({"error": "Aucun fichier reçu."}), 400
+    data = file.read()
+    if not data.startswith(b"%PDF"):
+        return jsonify({"error": "Le fichier n'est pas un PDF valide."}), 400
+    if len(data) > PDF_MAX_BYTES:
+        return jsonify({"error": "PDF trop volumineux (4,3 Mo maximum)."}), 413
+    nom = re.sub(r"[\r\n]", " ", (file.filename or "document.pdf")).strip()[:200]
+    try:
+        url = blob_upload_bytes(data, nom if nom.lower().endswith(".pdf") else nom + ".pdf", "application/pdf")
+    except Exception as e:
+        print(f"Échec de l'envoi du PDF : {e}")
+        traceback.print_exc()
+        return jsonify({"error": f"PDF non enregistré : {e}"}), 502
+    return jsonify({"nom": nom, "url": url}), 201
 
 
 @app.get("/api/plannings")

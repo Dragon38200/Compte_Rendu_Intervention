@@ -380,7 +380,7 @@
       </div>
 
       <table class="items-table pl-table" id="plTable">
-        <thead><tr><th>Tâche</th><th style="width:12%">Responsable</th><th style="width:10%">Début</th><th style="width:10%">Fin</th><th style="width:7%">Avanc. %</th><th class="pl-chk-h">Schéma</th><th class="pl-chk-h">Matériel</th><th class="pl-chk-h">Réalisation</th><th class="pl-chk-h">Contrôle Qualité</th><th class="pl-chk-h">Livraison</th><th style="width:3%"></th></tr></thead>
+        <thead><tr><th>Tâche</th><th style="width:12%">Responsable</th><th style="width:10%">Début</th><th style="width:10%">Fin</th><th style="width:7%">Avanc. %</th><th class="pl-chk-h">Schéma</th><th class="pl-chk-h">Matériel</th><th class="pl-chk-h">Réalisation</th><th class="pl-chk-h">Contrôle Qualité</th><th class="pl-chk-h">Livraison</th><th style="width:8%"></th></tr></thead>
         <tbody id="plBody"></tbody>
       </table>
       <div class="items-actions">
@@ -474,6 +474,41 @@
   <div class="modal-body">
     <div class="dm-filters"><input type="text" id="plListQ" placeholder="Rechercher (projet, affaire, client, responsable)…"></div>
     <div id="plListBody" class="dm-list"></div>
+  </div>
+</div>
+
+<div id="modalTache" class="modal hidden">
+  <div class="modal-header"><h3 id="tcTitle">Détail de l'affaire</h3><button class="modal-close" data-close>✕</button></div>
+  <div class="modal-body">
+    <div class="grid-3 tc-grid">
+      <div class="field tc-wide"><label>AFFAIRE / TÂCHE</label><input type="text" id="tcNom"></div>
+      <div class="field"><label>RESPONSABLE</label><input type="text" id="tcResp"></div>
+      <div class="field"><label>DÉBUT</label><input type="date" id="tcDebut"></div>
+      <div class="field"><label>FIN</label><input type="date" id="tcFin"></div>
+      <div class="field"><label>AVANCEMENT %</label><input type="number" id="tcPct" min="0" max="100" step="5"></div>
+    </div>
+    <div class="tc-checks" id="tcChecks"></div>
+    <div class="tc-meta" id="tcMeta"></div>
+    <div class="field"><label>DÉTAILS / NOTES</label><textarea id="tcNotes" rows="4" placeholder="Contexte de l'affaire, contraintes, contacts…"></textarea></div>
+    <div class="field">
+      <label>DOCUMENTS PDF</label>
+      <div id="tcDocs" class="tc-docs"></div>
+      <div class="tc-doc-actions">
+        <button type="button" class="btn btn-ghost btn-sm" id="tcAddPdf">📄 Ajouter un PDF</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="tcAddLink">🔗 Ajouter un lien</button>
+        <span id="tcUploadMsg" class="muted-count"></span>
+      </div>
+      <div id="tcLinkForm" class="tc-link-form hidden">
+        <input type="text" id="tcLinkName" placeholder="Nom du document (ex: Schéma électrique)">
+        <input type="url" id="tcLinkUrl" placeholder="https://…">
+        <button type="button" class="btn btn-accent btn-sm" id="tcLinkOk">Ajouter</button>
+      </div>
+      <input type="file" id="tcPdfInput" accept="application/pdf,.pdf" multiple class="hidden">
+    </div>
+    <div class="modal-form-actions">
+      <button type="button" class="btn btn-ghost" data-close>Annuler</button>
+      <button type="button" class="btn btn-accent" id="tcOk">Valider</button>
+    </div>
   </div>
 </div>
 

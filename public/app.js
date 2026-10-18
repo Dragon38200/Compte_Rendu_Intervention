@@ -1785,12 +1785,15 @@ function addPlRow(values = {}) {
     <td><input type="date" class="pl-fin"></td>
     <td><input type="number" class="pl-pct" min="0" max="100" step="5" value="0"></td>
     ${PL_CHECKS.map(c => `<td class="pl-chk"><input type="checkbox" class="pl-ck" data-k="${c.k}" title="${c.label}"></td>`).join("")}
-    <td><button type="button" class="btn-icon pl-del" title="Supprimer la tâche">✕</button></td>`;
+    <td class="pl-actions"><button type="button" class="btn-icon pl-info" title="Détail de l'affaire et documents PDF">📎<span class="pl-doc-count"></span></button><button type="button" class="btn-icon pl-del" title="Supprimer la tâche">✕</button></td>`;
   tr.querySelector(".pl-nom").value = values.nom || "";
   tr.querySelector(".pl-resp").value = values.responsable || "";
   tr.querySelector(".pl-debut").value = values.debut || "";
   tr.querySelector(".pl-fin").value = values.fin || "";
   if (values.avancement !== undefined) tr.querySelector(".pl-pct").value = values.avancement;
+  tr._extra = { notes: values.notes || "", docs: Array.isArray(values.docs) ? values.docs.map(d => ({ nom: d.nom, url: d.url })) : [] };
+  updatePlDocCount(tr);
+  tr.querySelector(".pl-info").addEventListener("click", () => openTacheModal(tr));
   PL_CHECKS.forEach(c => { tr.querySelector(`.pl-ck[data-k="${c.k}"]`).checked = !!values[c.k]; });
   tr.querySelectorAll(".pl-ck").forEach(cb => cb.addEventListener("change", () => refreshPlChecks(tr)));
   refreshPlChecks(tr);
@@ -1806,15 +1809,93 @@ function addPlRow(values = {}) {
   return tr;
 }
 
-function getPlanningTasks() {
-  return [...$id("plBody").children].map(tr => ({
+function plTaskOf(tr) {
+  return {
     nom: tr.querySelector(".pl-nom").value.trim(),
     responsable: tr.querySelector(".pl-resp").value.trim(),
     debut: tr.querySelector(".pl-debut").value,
     fin: tr.querySelector(".pl-fin").value,
     avancement: tr.querySelector(".pl-pct").value,
     ...Object.fromEntries(PL_CHECKS.map(c => [c.k, tr.querySelector(`.pl-ck[data-k="${c.k}"]`).checked])),
-  })).filter(t => t.nom || t.debut || t.fin);
+    notes: (tr._extra && tr._extra.notes) || "",
+    docs: (tr._extra && tr._extra.docs) || [],
+  };
+}
+// Lignes réellement utilisées (mêmes critères que le payload) : l'index sert aussi au clic sur le Gantt.
+function plRows() { return [...$id("plBody").children].filter(tr => { const t = plTaskOf(tr); return t.nom || t.debut || t.fin; }); }
+function getPlanningTasks() { return plRows().map(plTaskOf); }
+function updatePlDocCount(tr) {
+  const n = (tr._extra && tr._extra.docs.length) || 0;
+  tr.querySelector(".pl-doc-count").textContent = n ? String(n) : "";
+}
+
+/* ---- Popup « détail de l'affaire » : infos + documents PDF liés ---- */
+let tcRow = null, tcDocs = [];
+const MAX_PDF_BYTES = 4.3 * 1024 * 1024;   // marge sous la limite Vercel (4,5 Mo)
+
+function tcRenderDocs() {
+  const box = $id("tcDocs");
+  if (!tcDocs.length) { box.innerHTML = `<div class="tc-doc-empty">Aucun document lié.</div>`; return; }
+  box.innerHTML = tcDocs.map((d, i) => `<div class="tc-doc">📄 <a href="${escHtml(d.url)}" target="_blank" rel="noopener noreferrer">${escHtml(d.nom || d.url)}</a><button type="button" class="btn-icon" data-rm="${i}" title="Retirer">✕</button></div>`).join("");
+}
+function tcRenderMeta() {
+  const a = parseISO($id("tcDebut").value), b = parseISO($id("tcFin").value);
+  $id("tcMeta").textContent = a !== null && b !== null && b >= a ? `Durée : ${(b - a) / DAY_MS + 1} jour(s) — du ${fmtFR(a)} au ${fmtFR(b)}` : "";
+}
+function tcSyncChecks() { $id("tcChecks").querySelectorAll(".tc-check").forEach(l => l.classList.toggle("ok", l.querySelector("input").checked)); }
+
+function openTacheModal(tr) {
+  tcRow = tr;
+  const t = plTaskOf(tr);
+  $id("tcTitle").textContent = `Détail de l'affaire${t.nom ? " — " + t.nom : ""}`;
+  $id("tcNom").value = t.nom; $id("tcResp").value = t.responsable; $id("tcDebut").value = t.debut; $id("tcFin").value = t.fin;
+  $id("tcPct").value = t.avancement; $id("tcNotes").value = t.notes;
+  $id("tcChecks").innerHTML = PL_CHECKS.map(c => `<label class="tc-check"><input type="checkbox" data-k="${c.k}"${t[c.k] ? " checked" : ""}> ${c.label}</label>`).join("");
+  tcSyncChecks(); tcDocs = t.docs.map(d => ({ ...d })); tcRenderDocs(); tcRenderMeta();
+  $id("tcUploadMsg").textContent = ""; $id("tcLinkForm").classList.add("hidden");
+  openModal("modalTache");
+}
+
+function wireTacheModal() {
+  ["tcDebut", "tcFin"].forEach(id => $id(id).addEventListener("change", tcRenderMeta));
+  $id("tcChecks").addEventListener("change", tcSyncChecks);
+  $id("tcDocs").addEventListener("click", ev => {
+    const b = ev.target.closest("[data-rm]"); if (!b) return;
+    tcDocs.splice(parseInt(b.dataset.rm, 10), 1); tcRenderDocs();
+  });
+  $id("tcAddPdf").addEventListener("click", () => $id("tcPdfInput").click());
+  $id("tcPdfInput").addEventListener("change", async ev => {
+    const files = [...ev.target.files]; ev.target.value = "";
+    for (const f of files) {
+      if (f.size > MAX_PDF_BYTES) { $id("tcUploadMsg").textContent = `« ${f.name} » dépasse 4,3 Mo (limite d'envoi).`; continue; }
+      $id("tcUploadMsg").textContent = `Envoi de ${f.name}…`;
+      try {
+        const fd = new FormData(); fd.append("fichier", f);
+        const r = await api("/api/plannings/upload-pdf", { method: "POST", body: fd });
+        tcDocs.push({ nom: r.nom, url: r.url }); tcRenderDocs();
+        $id("tcUploadMsg").textContent = "";
+      } catch (e) { $id("tcUploadMsg").textContent = `Échec : ${e.message}`; }
+    }
+  });
+  $id("tcAddLink").addEventListener("click", () => $id("tcLinkForm").classList.toggle("hidden"));
+  $id("tcLinkOk").addEventListener("click", () => {
+    const url = $id("tcLinkUrl").value.trim(), nom = $id("tcLinkName").value.trim();
+    if (!/^https?:\/\//i.test(url)) { $id("tcUploadMsg").textContent = "Le lien doit commencer par http:// ou https://"; return; }
+    tcDocs.push({ nom: nom || url, url }); tcRenderDocs();
+    $id("tcLinkName").value = ""; $id("tcLinkUrl").value = ""; $id("tcLinkForm").classList.add("hidden"); $id("tcUploadMsg").textContent = "";
+  });
+  $id("tcOk").addEventListener("click", () => {
+    const tr = tcRow; if (!tr) return;
+    tr.querySelector(".pl-nom").value = $id("tcNom").value; tr.querySelector(".pl-resp").value = $id("tcResp").value;
+    tr.querySelector(".pl-debut").value = $id("tcDebut").value; tr.querySelector(".pl-fin").value = $id("tcFin").value;
+    tr.querySelector(".pl-pct").value = $id("tcPct").value || 0;
+    $id("tcChecks").querySelectorAll("input[data-k]").forEach(cb => { tr.querySelector(`.pl-ck[data-k="${cb.dataset.k}"]`).checked = cb.checked; });
+    tr._extra = { notes: $id("tcNotes").value.trim(), docs: tcDocs.map(d => ({ ...d })) };
+    refreshPlChecks(tr); updatePlDocCount(tr); renderGantt();
+    tr.querySelector(".pl-nom").dispatchEvent(new Event("input", { bubbles: true }));   // déclenche le brouillon local
+    closeAllModals();
+    setStatus("Affaire mise à jour (pensez à enregistrer le planning)", "info");
+  });
 }
 
 function renderGantt() {
@@ -1842,8 +1923,8 @@ function renderGantt() {
   let html = `<table class="gantt-table"><thead>
     <tr><th rowspan="2" class="g-name">Tâche</th><th rowspan="2" class="g-resp">Resp.</th>${months.map(m => `<th colspan="${m.span}" class="g-month">${m.label}</th>`).join("")}</tr>
     <tr>${L.cols.map(c => `<th class="g-col ${colClass(c)}">${L.mode === "day" ? new Date(c.start).getUTCDate() : "S" + isoWeek(c.start)}</th>`).join("")}</tr></thead><tbody>`;
-  L.rows.forEach(r => {
-    html += `<tr><td class="g-name" title="${esc(r.task.nom)}">${esc(r.task.nom || "—")}</td><td class="g-resp">${esc(r.task.responsable || "")}</td>`;
+  L.rows.forEach((r, ri) => {
+    html += `<tr><td class="g-name g-click" data-i="${ri}" title="Cliquer pour ouvrir le détail de l'affaire">${esc(r.task.nom || "—")}</td><td class="g-resp">${esc(r.task.responsable || "")}</td>`;
     L.cols.forEach((c, i) => {
       const on = r.from >= 0 && i >= r.from && i <= r.to;
       const cls = on ? (i - r.from < r.done ? "g-on g-done" : "g-on g-todo") : "";
@@ -1852,6 +1933,7 @@ function renderGantt() {
     html += `</tr>`;
   });
   host.innerHTML = html + `</tbody></table>`;
+  host.querySelectorAll("td.g-click").forEach(td => td.addEventListener("click", () => { const tr = plRows()[+td.dataset.i]; if (tr) openTacheModal(tr); }));
 
   const valid = L.rows.filter(r => r.from >= 0);
   const avg = valid.length ? Math.round(valid.reduce((a, r) => a + Math.max(0, Math.min(100, parseFloat(r.task.avancement) || 0)), 0) / valid.length) : 0;
@@ -1942,6 +2024,7 @@ function initPlanning() {
     $id("plAddRow").addEventListener("click", () => addPlRow().querySelector(".pl-nom").focus());
     addPlRow();
     wirePlanningStorage();
+    wireTacheModal();
     setupDraft(draftKey("planning"), ".tpl-planning_smati", getPlanningPayload, plSetForm, () => plCurrentId);
   }
   if (!$id("plFilename").value) $id("plFilename").value = `Planning_${stampOf()}`;

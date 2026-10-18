@@ -744,3 +744,30 @@ label.checkbox-inline input[type="checkbox"] {
 .pl-table td.pl-chk.ok { background: #BFE8C8; }
 .pl-table td.pl-chk input { width: 18px; height: 18px; accent-color: #1F9D49; cursor: pointer; }
 .pl-table tr.pl-all-ok td:first-child input { border-color: #1F9D49; background: #E3F4E1; }
+
+/* Popup détail d'une affaire du planning */
+.pl-table .pl-info { margin-right: 4px; background: var(--c-tint); color: var(--c-dark); border: 1px solid var(--c-border); position: relative; width: auto; padding: 0 7px; min-width: 34px; }
+.pl-table .pl-info .pl-doc-count { font-size: 11px; font-weight: 700; margin-left: 3px; }
+.pl-table .pl-info:hover { background: var(--c-main); color: #fff; }
+.gantt-table td.g-name.g-click { cursor: pointer; }
+.gantt-table td.g-name.g-click:hover { text-decoration: underline; color: var(--c-main); }
+.tc-grid { grid-template-columns: repeat(2, 1fr); }
+.tc-wide { grid-column: 1 / -1; }
+.tc-checks { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 4px; }
+.tc-check { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px; border: 1px solid var(--c-border, #ddd); background: #fff; font-size: 12.5px; cursor: pointer; }
+.tc-check.ok { background: #BFE8C8; border-color: #8FD19E; font-weight: 700; }
+.tc-check input { accent-color: #1F9D49; }
+.tc-meta { font-size: 12.5px; color: var(--text-muted); margin-bottom: 10px; }
+.tc-docs { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 8px; }
+.tc-doc { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--c-border, #ddd); border-radius: 8px; background: var(--c-surface, #fff); }
+.tc-doc a { flex: 1; font-weight: 600; color: var(--c-dark, #a91b14); text-decoration: none; word-break: break-all; }
+.tc-doc a:hover { text-decoration: underline; }
+.tc-doc-empty { font-size: 12.5px; color: var(--text-muted); padding: 4px 0; }
+.tc-doc-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.tc-link-form { display: flex; gap: 8px; margin-top: 8px; }
+.tc-link-form input { flex: 1; min-width: 0; }
+.modal .modal-form-actions { margin-top: 12px; display: flex; gap: 8px; justify-content: flex-end; }
+.tc-check { white-space: nowrap; text-transform: none; letter-spacing: 0; width: auto; }
+.tc-check input { width: auto; margin: 0; }
+.tc-doc .btn-icon { background: var(--c-tint); color: var(--c-dark); border: 1px solid var(--c-border); }
+.tc-doc .btn-icon:hover { background: var(--c-main); color: #fff; }
