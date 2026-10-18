@@ -1765,6 +1765,17 @@ function ganttLayout(tasks) {
   return { mode, cols, rows };
 }
 
+// Jalons à cocher par tâche : la cellule passe au vert dès que c'est validé.
+const PL_CHECKS = [
+  { k: "schema", label: "Schéma" }, { k: "materiel", label: "Matériel" }, { k: "realisation", label: "Réalisation" },
+  { k: "controle", label: "Contrôle Qualité" }, { k: "livraison", label: "Livraison" },
+];
+function refreshPlChecks(tr) {
+  let all = true;
+  tr.querySelectorAll(".pl-ck").forEach(cb => { cb.parentElement.classList.toggle("ok", cb.checked); if (!cb.checked) all = false; });
+  tr.classList.toggle("pl-all-ok", all);
+}
+
 function addPlRow(values = {}) {
   const tr = document.createElement("tr");
   tr.innerHTML = `
@@ -1773,12 +1784,16 @@ function addPlRow(values = {}) {
     <td><input type="date" class="pl-debut"></td>
     <td><input type="date" class="pl-fin"></td>
     <td><input type="number" class="pl-pct" min="0" max="100" step="5" value="0"></td>
+    ${PL_CHECKS.map(c => `<td class="pl-chk"><input type="checkbox" class="pl-ck" data-k="${c.k}" title="${c.label}"></td>`).join("")}
     <td><button type="button" class="btn-icon pl-del" title="Supprimer la tâche">✕</button></td>`;
   tr.querySelector(".pl-nom").value = values.nom || "";
   tr.querySelector(".pl-resp").value = values.responsable || "";
   tr.querySelector(".pl-debut").value = values.debut || "";
   tr.querySelector(".pl-fin").value = values.fin || "";
   if (values.avancement !== undefined) tr.querySelector(".pl-pct").value = values.avancement;
+  PL_CHECKS.forEach(c => { tr.querySelector(`.pl-ck[data-k="${c.k}"]`).checked = !!values[c.k]; });
+  tr.querySelectorAll(".pl-ck").forEach(cb => cb.addEventListener("change", () => refreshPlChecks(tr)));
+  refreshPlChecks(tr);
   tr.querySelector(".pl-debut").addEventListener("change", () => {
     const f = tr.querySelector(".pl-fin"), d = tr.querySelector(".pl-debut");
     if (d.value && (!f.value || f.value < d.value)) f.value = d.value;   // fin jamais avant début
@@ -1798,6 +1813,7 @@ function getPlanningTasks() {
     debut: tr.querySelector(".pl-debut").value,
     fin: tr.querySelector(".pl-fin").value,
     avancement: tr.querySelector(".pl-pct").value,
+    ...Object.fromEntries(PL_CHECKS.map(c => [c.k, tr.querySelector(`.pl-ck[data-k="${c.k}"]`).checked])),
   })).filter(t => t.nom || t.debut || t.fin);
 }
 

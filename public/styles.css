@@ -737,3 +737,10 @@ label.checkbox-inline input[type="checkbox"] {
 .dm-filters input { flex: 1 1 auto; width: auto; min-width: 0; }
 .dm-filters select { flex: 0 0 200px; width: 200px; }
 .theme-smati .modal-header h3 { color: var(--c-dark); }
+
+/* Jalons du planning (cases à cocher qui passent au vert) */
+.pl-table th.pl-chk-h { width: 6.5%; text-align: center; font-size: 10px; line-height: 1.15; }
+.pl-table td.pl-chk { text-align: center; background: transparent; transition: background .15s; }
+.pl-table td.pl-chk.ok { background: #BFE8C8; }
+.pl-table td.pl-chk input { width: 18px; height: 18px; accent-color: #1F9D49; cursor: pointer; }
+.pl-table tr.pl-all-ok td:first-child input { border-color: #1F9D49; background: #E3F4E1; }

@@ -1145,18 +1145,28 @@ def _render_planning_docx(doc, pl):
         r.font.size = Pt(8.5)
 
     doc.add_heading("Détail des tâches", level=1)
-    dt = doc.add_table(rows=1 + len(tasks), cols=6)
+    dt = doc.add_table(rows=1 + len(tasks), cols=11)
     dt.alignment = WD_TABLE_ALIGNMENT.CENTER
     dt.style = "Table Grid"
-    for i, h in enumerate(["Tâche", "Responsable", "Début", "Fin", "Durée (j)", "Avancement"]):
+    dt.autofit = False
+    widths = [Cm(3.0), Cm(2.2), Cm(2.0), Cm(2.0), Cm(1.0), Cm(1.3)] + [Cm(1.0)] * 5
+    for i, h in enumerate(["Tâche", "Responsable", "Début", "Fin", "Durée (j)", "Avanc."] + [_PLANNING_CHECK_SHORT[k] for k, _ in PLANNING_CHECKS]):
         _docx_shade(dt.rows[0].cells[i], _SMATI_RED)
-        _docx_cell_text(dt.rows[0].cells[i], h, bold=True, color="FFFFFF")
+        _docx_cell_text(dt.rows[0].cells[i], h, bold=True, size=7 if i >= 4 else 8, color="FFFFFF")
     for r, t in enumerate(tasks, start=1):
         a, b = _parse_iso_date(t.get("debut")), _parse_iso_date(t.get("fin"))
         dur = str((b - a).days + 1) if a and b and b >= a else "—"
         vals = [t.get("nom", ""), t.get("responsable", ""), _fr_date(t.get("debut")) if t.get("debut") else "", _fr_date(t.get("fin")) if t.get("fin") else "", dur, "%s %%" % (t.get("avancement") or 0)]
         for i, v in enumerate(vals):
-            _docx_cell_text(dt.rows[r].cells[i], v)
+            _docx_cell_text(dt.rows[r].cells[i], v, size=8)
+        for j, (k, _label) in enumerate(PLANNING_CHECKS):
+            cell = dt.rows[r].cells[6 + j]
+            if t.get(k):
+                _docx_shade(cell, _CHECK_GREEN)
+                _docx_cell_text(cell, "OK", bold=True, size=7, color="FFFFFF", align=WD_ALIGN_PARAGRAPH.CENTER)
+    for row in dt.rows:
+        for i, w in enumerate(widths):
+            row.cells[i].width = w
 
 
 def _standalone_story_pdf(payload, style_h2, style_body, usable_w):
@@ -1268,20 +1278,33 @@ def _standalone_story_pdf(payload, style_h2, style_body, usable_w):
     story.append(Paragraph('<font color="#%s">&#9632;</font> Réalisé &nbsp;&nbsp; <font color="#%s">&#9632;</font> Prévu' % (_SMATI_RED, _SMATI_ORANGE), small))
     story.append(Spacer(1, 8))
     story.append(Paragraph("Détail des tâches", style_h2))
-    data = [[Paragraph(h, head) for h in ("Tâche", "Responsable", "Début", "Fin", "Durée (j)", "Avancement")]]
-    for t in tasks:
+    head_s = ParagraphStyle("hs", parent=head, fontSize=6.5, leading=7.5, alignment=1)
+    data = [[Paragraph(h, head_s) for h in ("Tâche", "Responsable", "Début", "Fin")] + [Paragraph(h, head_s) for h in ("Durée (j)", "Avanc.")]
+            + [Paragraph(_PLANNING_CHECK_SHORT[k], head_s) for k, _ in PLANNING_CHECKS]]
+    ok_style = ParagraphStyle("ok", parent=small, fontSize=7, alignment=1, textColor=colors.white, fontName="Helvetica-Bold")
+    green = colors.HexColor("#" + _CHECK_GREEN)
+    extra = []
+    for ri, t in enumerate(tasks, start=1):
         a, b = _parse_iso_date(t.get("debut")), _parse_iso_date(t.get("fin"))
         dur = str((b - a).days + 1) if a and b and b >= a else "—"
-        data.append([Paragraph(_xml_escape(t.get("nom", "")), small), Paragraph(_xml_escape(t.get("responsable", "")), small),
-                     _fr_date(t.get("debut")) if t.get("debut") else "", _fr_date(t.get("fin")) if t.get("fin") else "",
-                     dur, "%s %%" % (t.get("avancement") or 0)])
-    w = [6 * cm, 3 * cm, 2 * cm, 2 * cm, 1.6 * cm]
-    dt = Table(data, colWidths=w + [usable_w - sum(w)], repeatRows=1)
+        row = [Paragraph(_xml_escape(t.get("nom", "")), small), Paragraph(_xml_escape(t.get("responsable", "")), small),
+               _fr_date(t.get("debut")) if t.get("debut") else "", _fr_date(t.get("fin")) if t.get("fin") else "",
+               dur, "%s %%" % (t.get("avancement") or 0)]
+        for j, (k, _label) in enumerate(PLANNING_CHECKS):
+            if t.get(k):
+                row.append(Paragraph("OK", ok_style))
+                extra.append(("BACKGROUND", (6 + j, ri), (6 + j, ri), green))
+            else:
+                row.append("")
+        data.append(row)
+    w = [3.3 * cm, 2.4 * cm, 1.9 * cm, 1.9 * cm, 1.1 * cm, 1.4 * cm] + [(usable_w - 12.0 * cm) / 5] * 5
+    dt = Table(data, colWidths=w, repeatRows=1)
     dt.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.5, grid), ("BACKGROUND", (0, 0), (-1, 0), red),
         ("FONTSIZE", (0, 1), (-1, -1), 8), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-    ]))
+        ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+    ] + extra))
     story.append(dt)
     return story
 
@@ -3124,6 +3147,11 @@ def export_materiel_xlsx():
 #  SMATI : plannings de réalisation (stockage partagé)
 # ======================================================================
 PLANNING_TEMPLATE_ID = "planning_smati"
+# Jalons à cocher de chaque tâche (clé, libellé complet, libellé court pour les documents)
+PLANNING_CHECKS = [("schema", "Schéma"), ("materiel", "Matériel"), ("realisation", "Réalisation"),
+                   ("controle", "Contrôle Qualité"), ("livraison", "Livraison")]
+_PLANNING_CHECK_SHORT = {"schema": "Schéma", "materiel": "Matér.", "realisation": "Réalis.", "controle": "C. Qual.", "livraison": "Livr."}
+_CHECK_GREEN = "3FB65F"
 
 
 def planning_access_required(f):
@@ -3143,6 +3171,8 @@ def _clean_planning(p):
     for t in (p.get("taches") or [])[:300]:
         tache = {k: str(t.get(k) or "").strip()[:300] for k in ("nom", "responsable", "debut", "fin", "avancement")}
         tache["debut"], tache["fin"] = tache["debut"][:10], tache["fin"][:10]
+        for k, _label in PLANNING_CHECKS:
+            tache[k] = bool(t.get(k))
         if tache["nom"] or tache["debut"] or tache["fin"]:
             taches.append(tache)
     return {"projet": txt("projet"), "affaire": txt("affaire"), "client": txt("client"), "responsable": txt("responsable"), "taches": taches}
