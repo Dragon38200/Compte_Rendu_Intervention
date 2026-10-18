@@ -392,17 +392,17 @@
   }
 
   function init() {
-    container = document.getElementById("bgCanvas");
+    container = document.getElementById("smatiThumb");
     scene = new THREE.Scene();
-    camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera = new THREE.PerspectiveCamera(45, 1.6, 0.1, 1000);
     camera.position.set(0, 0, 28);
 
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "low-power" });
-    renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.2;
     container.appendChild(renderer.domElement);
+    onResize();
 
     scene.add(new THREE.AmbientLight(0xffa36b, 0.7));
     const main = new THREE.DirectionalLight(0xffffff, 2.0);
@@ -429,14 +429,18 @@
     buildTimeline();
 
     window.addEventListener("resize", onResize);
+    if (window.ResizeObserver) new ResizeObserver(onResize).observe(container);
     ready = true;
   }
 
   function onResize() {
-    if (!ready) return;
-    camera.aspect = window.innerWidth / window.innerHeight;
+    if (!container || !renderer) return;
+    const w = container.clientWidth || 300, h = container.clientHeight || 200;
+    const aspect = w / h;
+    camera.aspect = aspect;
+    camera.fov = 58 * Math.max(1, 1.6 / aspect);   // garde l'armoire entière si la vignette est étroite
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(w, h, false);
   }
 
   function frame(now) {
@@ -466,7 +470,7 @@
     running = true;  // posé tout de suite : stop() peut survenir pendant le chargement
     ensureLibs().then(() => {
       if (!ready) init();
-      const box = document.getElementById("bgCanvas");
+      const box = document.getElementById("smatiThumb");
       if (box) box.classList.add("visible");
       if (timeline) timeline.play();
       if (running && !rafId) rafId = requestAnimationFrame(frame);
@@ -480,7 +484,7 @@
     running = false;
     if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
     if (timeline) timeline.pause();
-    const box = document.getElementById("bgCanvas");
+    const box = document.getElementById("smatiThumb");
     if (box) box.classList.remove("visible");
   }
 

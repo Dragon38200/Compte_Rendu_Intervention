@@ -672,19 +672,15 @@ label.checkbox-inline input[type="checkbox"] {
   --c-border: #E6C3B9; --c-dash: #EBA999; --c-line-rgb: 169, 27, 20;
   --c-bg-top: #FDEDE6;
 }
-.theme-smati body { background: transparent; }
-.theme-smati .topbar { background: rgba(255, 255, 255, 0.86); backdrop-filter: blur(6px); }
-.theme-smati .template-tabs { background: rgba(255, 255, 255, 0.9); }
-.theme-smati .panel { background: rgba(255, 255, 255, 0.72); backdrop-filter: blur(3px); }
-.theme-smati input, .theme-smati textarea, .theme-smati select { background-color: rgba(255, 255, 255, 0.92); }
-.theme-smati .armoire-section, .theme-smati .armoire-notation { background: rgba(255, 249, 246, 0.78); }
-.theme-smati .logo-zone, .theme-smati .photo-zone { background: rgba(255, 249, 246, 0.75); }
 .theme-smati .btn-ghost { background: var(--c-tint); }
 
-/* Canevas du fond 3D (onglet SMATI) : derrière tout le contenu, sans capter la souris */
-#bgCanvas {
-  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+/* Vignette 3D animée (onglet SMATI) : dans l'espace libre sous les boutons */
+#smatiThumb {
+  display: none; position: relative; height: 240px; margin-top: 14px;
+  border: 1px solid var(--c-border); border-radius: 12px; overflow: hidden;
+  background: radial-gradient(circle at 50% 40%, #FFF9F6, #F6D9CF);
   opacity: 0; transition: opacity 0.8s ease;
 }
-#bgCanvas.visible { opacity: 0.75; }
-#bgCanvas canvas { display: block; width: 100% !important; height: 100% !important; }
+.theme-smati #smatiThumb { display: block; }
+#smatiThumb.visible { opacity: 1; }
+#smatiThumb canvas { display: block; width: 100% !important; height: 100% !important; }
