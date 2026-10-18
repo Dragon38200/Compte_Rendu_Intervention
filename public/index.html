@@ -395,6 +395,9 @@
       <div class="smati-doc-actions">
         <span class="status-label status-info" data-mirror-status>Prêt</span>
         <div class="bottom-actions">
+          <button type="button" class="btn btn-ghost" id="plNew">🆕 Nouveau</button>
+          <button type="button" class="btn btn-ghost" id="plOpenList">📂 Mes plannings</button>
+          <button type="button" class="btn btn-accent" id="plSave">💾 Enregistrer</button>
           <button type="button" class="btn btn-ghost" data-proxy="btnGeneratePdf">📑 Export PDF</button>
           <button type="button" class="btn btn-ghost" data-proxy="btnEmailReport">✉️ Envoyer par email</button>
           <button type="button" class="btn btn-accent" data-proxy="btnGenerate">📄 Générer (.docx)</button>
@@ -463,6 +466,14 @@
       <select id="dmListStatut"><option value="">Tous les statuts</option><option>Brouillon</option><option>À commander</option><option>Commandée</option><option>Expédiée</option><option>Livrée partiellement</option><option>Livrée</option><option>Annulée</option></select>
     </div>
     <div id="dmListBody" class="dm-list"></div>
+  </div>
+</div>
+
+<div id="modalPlannings" class="modal hidden">
+  <div class="modal-header"><h3>Plannings de réalisation</h3><button class="modal-close" data-close>✕</button></div>
+  <div class="modal-body">
+    <div class="dm-filters"><input type="text" id="plListQ" placeholder="Rechercher (projet, affaire, client, responsable)…"></div>
+    <div id="plListBody" class="dm-list"></div>
   </div>
 </div>
 

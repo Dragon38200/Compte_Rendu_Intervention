@@ -1584,6 +1584,7 @@ function initDemandeMateriel() {
     $id("dmDate").value = todayISO();
     addDmRow();
     wireDemandeStorage();
+    setupDraft(draftKey("demande"), ".tpl-demande_materiel_smati", getDemandePayload, dmSetForm, () => dmCurrentId);
   }
   if (!$id("dmFilename").value) $id("dmFilename").value = `Demande_Materiel_${stampOf()}`;
 }
@@ -1605,6 +1606,23 @@ function getDemandePayload() {
     suivi: { commande_num: v("dmCmdNum"), commande_date: $id("dmCmdDate").value, livraison_reelle: $id("dmLivReelle").value, commentaire: v("dmSuiviCom") },
   };
 }
+
+/* ---- Brouillons locaux : le travail en cours survit à un rechargement de page ---- */
+const draftKey = n => `smati_draft_${n}_${state.user ? state.user.id : "0"}`;   // un brouillon par compte
+function setupDraft(key, panelSel, getPayload, applyPayload, getId) {
+  const save = () => {
+    try { localStorage.setItem(key, JSON.stringify({ id: getId(), data: getPayload() })); } catch (_) {}
+  };
+  let t = null;
+  const panel = document.querySelector(panelSel);
+  ["input", "change", "click"].forEach(ev => panel.addEventListener(ev, () => { clearTimeout(t); t = setTimeout(save, 400); }));
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) { const d = JSON.parse(raw); if (d && d.data) { applyPayload(d.data, d.id || null); return true; } }
+  } catch (_) {}
+  return false;
+}
+const clearDraft = key => { try { localStorage.removeItem(key); } catch (_) {} };
 
 /* ---- Demandes de matériel : stockage, suivi, export Excel ---- */
 let dmCurrentId = null;
@@ -1632,6 +1650,9 @@ const escHtml = t => String(t ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<
 async function dmSave() {
   try {
     const body = JSON.stringify({ demande: getDemandePayload() });
+    if (dmCurrentId) {   // demande supprimée entre-temps par quelqu'un d'autre : on la recrée
+      try { await api(`/api/demandes-materiel/${dmCurrentId}`); } catch (e) { if (/introuvable/i.test(e.message)) dmCurrentId = null; }
+    }
     const saved = dmCurrentId
       ? await api(`/api/demandes-materiel/${dmCurrentId}`, { method: "PUT", body })
       : await api("/api/demandes-materiel", { method: "POST", body });
@@ -1661,6 +1682,7 @@ function wireDemandeStorage() {
   $id("dmSave").addEventListener("click", dmSave);
   $id("dmNew").addEventListener("click", () => {
     dmSetForm({ date: todayISO(), urgence: "Normale", statut: "Brouillon" }, null);
+    clearDraft(draftKey("demande"));
     $id("dmFilename").value = `Demande_Materiel_${stampOf()}`;
     setStatus("Nouvelle demande", "info");
   });
@@ -1821,12 +1843,90 @@ function renderGantt() {
   $id("plSummary").textContent = `${valid.length} tâche(s) · du ${fmtFR(min)} au ${fmtFR(max)} · avancement global ${avg} %`;
 }
 
+/* ---- Plannings : stockage ---- */
+let plCurrentId = null;
+
+function plSetForm(p, id) {
+  plCurrentId = id || null;
+  $id("plProjet").value = p.projet || ""; $id("plAffaire").value = p.affaire || "";
+  $id("plClient").value = p.client || ""; $id("plResponsable").value = p.responsable || "";
+  $id("plBody").innerHTML = "";
+  (p.taches && p.taches.length ? p.taches : [{}]).forEach(t => addPlRow(t));
+  renderGantt();
+  $id("plSave").textContent = id ? "💾 Mettre à jour" : "💾 Enregistrer";
+}
+
+async function plSave() {
+  try {
+    if (plCurrentId) {
+      try { await api(`/api/plannings/${plCurrentId}`); } catch (e) { if (/introuvable/i.test(e.message)) plCurrentId = null; }
+    }
+    const body = JSON.stringify({ planning: getPlanningPayload() });
+    const saved = plCurrentId
+      ? await api(`/api/plannings/${plCurrentId}`, { method: "PUT", body })
+      : await api("/api/plannings", { method: "POST", body });
+    plSetForm(saved.planning, saved.id);
+    try { localStorage.setItem(draftKey("planning"), JSON.stringify({ id: saved.id, data: getPlanningPayload() })); } catch (_) {}
+    setStatus(`Planning enregistré (n° ${saved.id}) — avancement ${saved.avancement} %`, "success");
+  } catch (e) { setStatus(`Échec de l'enregistrement : ${e.message}`, "error"); }
+}
+
+async function plRefreshList() {
+  const box = $id("plListBody");
+  try {
+    const rows = await api(`/api/plannings?${new URLSearchParams({ q: $id("plListQ").value.trim() })}`);
+    if (!rows.length) { box.innerHTML = `<div class="dm-empty">Aucun planning enregistré.</div>`; return; }
+    box.innerHTML = rows.map(r => `
+      <div class="dm-item" data-id="${r.id}">
+        <div class="t">${escHtml(r.projet || r.affaire || "Sans titre")}${r.client ? " — " + escHtml(r.client) : ""}</div>
+        <div class="a"><button type="button" class="btn btn-ghost btn-sm" data-act="open">Ouvrir</button><button type="button" class="btn btn-danger-ghost btn-sm" data-act="del">Supprimer</button></div>
+        <div class="s"><span class="dm-badge">${r.avancement} %</span> · ${r.nb_taches} tâche(s)${r.responsable ? " · " + escHtml(r.responsable) : ""} · maj ${escHtml(r.updated_at.slice(0, 16))}</div>
+      </div>`).join("");
+  } catch (e) { box.innerHTML = `<div class="dm-empty">${escHtml(e.message)}</div>`; }
+}
+
+function wirePlanningStorage() {
+  $id("plSave").addEventListener("click", plSave);
+  $id("plNew").addEventListener("click", () => {
+    plSetForm({}, null);
+    $id("plFilename").value = `Planning_${stampOf()}`;
+    clearDraft(draftKey("planning"));
+    setStatus("Nouveau planning", "info");
+  });
+  $id("plOpenList").addEventListener("click", () => { openModal("modalPlannings"); plRefreshList(); });
+  let t = null;
+  $id("plListQ").addEventListener("input", () => { clearTimeout(t); t = setTimeout(plRefreshList, 250); });
+  $id("plListBody").addEventListener("click", async ev => {
+    const btn = ev.target.closest("button[data-act]");
+    if (!btn) return;
+    const id = btn.closest(".dm-item").dataset.id;
+    try {
+      if (btn.dataset.act === "open") {
+        const r = await api(`/api/plannings/${id}`);
+        plSetForm(r.planning, r.id);
+        closeAllModals();
+        setStatus(`Planning n° ${r.id} chargé`, "success");
+      } else {
+        const ok = await confirmDialog("Supprimer le planning", "Supprimer définitivement ce planning ?");
+        if (ok) {
+          await api(`/api/plannings/${id}`, { method: "DELETE" });
+          if (String(plCurrentId) === String(id)) plSetForm({}, null);
+        }
+        openModal("modalPlannings");
+        plRefreshList();
+      }
+    } catch (e) { setStatus(e.message, "error"); }
+  });
+}
+
 let plReady = false;
 function initPlanning() {
   if (!plReady) {
     plReady = true;
     $id("plAddRow").addEventListener("click", () => addPlRow().querySelector(".pl-nom").focus());
     addPlRow();
+    wirePlanningStorage();
+    setupDraft(draftKey("planning"), ".tpl-planning_smati", getPlanningPayload, plSetForm, () => plCurrentId);
   }
   if (!$id("plFilename").value) $id("plFilename").value = `Planning_${stampOf()}`;
   renderGantt();

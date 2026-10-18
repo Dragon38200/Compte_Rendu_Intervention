@@ -104,6 +104,20 @@ CREATE TABLE IF NOT EXISTS demandes_materiel (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS plannings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_by INTEGER,
+    created_by_email TEXT,
+    projet TEXT,
+    affaire TEXT,
+    client TEXT,
+    responsable TEXT,
+    nb_taches INTEGER DEFAULT 0,
+    avancement INTEGER DEFAULT 0,
+    data TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS rapports (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
@@ -171,6 +185,22 @@ _POSTGRES_SCHEMA_STATEMENTS = [
         urgence TEXT,
         livraison TEXT,
         nb_lignes INTEGER DEFAULT 0,
+        data TEXT NOT NULL DEFAULT '{}',
+        created_at TIMESTAMPTZ DEFAULT now(),
+        updated_at TIMESTAMPTZ DEFAULT now()
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS plannings (
+        id SERIAL PRIMARY KEY,
+        created_by INTEGER,
+        created_by_email TEXT,
+        projet TEXT,
+        affaire TEXT,
+        client TEXT,
+        responsable TEXT,
+        nb_taches INTEGER DEFAULT 0,
+        avancement INTEGER DEFAULT 0,
         data TEXT NOT NULL DEFAULT '{}',
         created_at TIMESTAMPTZ DEFAULT now(),
         updated_at TIMESTAMPTZ DEFAULT now()
@@ -3088,6 +3118,118 @@ def export_materiel_xlsx():
     buf.seek(0)
     return send_file(buf, as_attachment=True, download_name="liste_materiel.xlsx",
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+# ======================================================================
+#  SMATI : plannings de réalisation (stockage partagé)
+# ======================================================================
+PLANNING_TEMPLATE_ID = "planning_smati"
+
+
+def planning_access_required(f):
+    @wraps(f)
+    @login_required
+    def wrapper(*args, **kwargs):
+        if PLANNING_TEMPLATE_ID not in _role_templates(_user_role(g.user_id)):
+            return jsonify({"error": "Votre rôle n'autorise pas l'accès aux plannings."}), 403
+        return f(*args, **kwargs)
+    return wrapper
+
+
+def _clean_planning(p):
+    p = p or {}
+    txt = lambda k, n=300: str(p.get(k) or "").strip()[:n]
+    taches = []
+    for t in (p.get("taches") or [])[:300]:
+        tache = {k: str(t.get(k) or "").strip()[:300] for k in ("nom", "responsable", "debut", "fin", "avancement")}
+        tache["debut"], tache["fin"] = tache["debut"][:10], tache["fin"][:10]
+        if tache["nom"] or tache["debut"] or tache["fin"]:
+            taches.append(tache)
+    return {"projet": txt("projet"), "affaire": txt("affaire"), "client": txt("client"), "responsable": txt("responsable"), "taches": taches}
+
+
+def _planning_avancement(taches):
+    vals = [max(0.0, min(100.0, _num(t.get("avancement")))) for t in taches]
+    return round(sum(vals) / len(vals)) if vals else 0
+
+
+def _planning_row_to_dict(row, full=True):
+    data = json.loads(row.get("data") or "{}")
+    out = {
+        "id": row["id"], "projet": row.get("projet"), "affaire": row.get("affaire"), "client": row.get("client"),
+        "responsable": row.get("responsable"), "nb_taches": row.get("nb_taches") or 0, "avancement": row.get("avancement") or 0,
+        "created_by_email": row.get("created_by_email"),
+        "created_at": str(row.get("created_at") or ""), "updated_at": str(row.get("updated_at") or ""),
+    }
+    if full:
+        out["planning"] = data
+    return out
+
+
+@app.get("/api/plannings")
+@planning_access_required
+def list_plannings():
+    q = (request.args.get("q") or "").strip().lower()
+    rows = db_fetchall("SELECT * FROM plannings ORDER BY updated_at DESC, id DESC")
+    out = []
+    for r in rows:
+        if q and q not in " ".join(str(r.get(k) or "") for k in ("projet", "affaire", "client", "responsable")).lower():
+            continue
+        out.append(_planning_row_to_dict(r, full=False))
+    return jsonify(out)
+
+
+@app.get("/api/plannings/<int:planning_id>")
+@planning_access_required
+def get_planning(planning_id):
+    row = db_fetchone("SELECT * FROM plannings WHERE id = %s", (planning_id,))
+    if not row:
+        return jsonify({"error": "Planning introuvable."}), 404
+    return jsonify(_planning_row_to_dict(row))
+
+
+def _save_planning(planning_id=None):
+    body = request.get_json(force=True, silent=True) or {}
+    p = _clean_planning(body.get("planning"))
+    if not (p["projet"] or p["affaire"] or p["client"] or p["taches"]):
+        return None, (jsonify({"error": "Renseignez au moins le projet, le n° d'affaire, le client ou une tâche."}), 400)
+    cols = (p["projet"], p["affaire"], p["client"], p["responsable"], len(p["taches"]), _planning_avancement(p["taches"]), json.dumps(p, ensure_ascii=False))
+    if planning_id:
+        if not db_fetchone("SELECT id FROM plannings WHERE id = %s", (planning_id,)):
+            return None, (jsonify({"error": "Planning introuvable."}), 404)
+        db_execute(
+            "UPDATE plannings SET projet=%s, affaire=%s, client=%s, responsable=%s, nb_taches=%s, avancement=%s, data=%s, "
+            "updated_at=CURRENT_TIMESTAMP WHERE id=%s", cols + (planning_id,))
+        new_id = planning_id
+    else:
+        user = db_fetchone("SELECT email FROM users WHERE id = %s", (g.user_id,)) or {}
+        new_id = db_insert_returning_id(
+            "INSERT INTO plannings (projet, affaire, client, responsable, nb_taches, avancement, data, created_by, created_by_email) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)", cols + (g.user_id, user.get("email", "")))
+    return _planning_row_to_dict(db_fetchone("SELECT * FROM plannings WHERE id = %s", (new_id,))), None
+
+
+@app.post("/api/plannings")
+@planning_access_required
+def create_planning():
+    result, err = _save_planning()
+    return err if err else (jsonify(result), 201)
+
+
+@app.put("/api/plannings/<int:planning_id>")
+@planning_access_required
+def update_planning(planning_id):
+    result, err = _save_planning(planning_id)
+    return err if err else jsonify(result)
+
+
+@app.delete("/api/plannings/<int:planning_id>")
+@planning_access_required
+def delete_planning(planning_id):
+    if not db_fetchone("SELECT id FROM plannings WHERE id = %s", (planning_id,)):
+        return jsonify({"error": "Planning introuvable."}), 404
+    db_execute("DELETE FROM plannings WHERE id = %s", (planning_id,))
+    return jsonify({"ok": True})
 
 
 @app.get("/api/health")

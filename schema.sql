@@ -78,3 +78,19 @@ CREATE TABLE IF NOT EXISTS demandes_materiel (
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Plannings de réalisation SMATI (stockage partagé)
+CREATE TABLE IF NOT EXISTS plannings (
+    id SERIAL PRIMARY KEY,
+    created_by INTEGER,
+    created_by_email TEXT,
+    projet TEXT,
+    affaire TEXT,
+    client TEXT,
+    responsable TEXT,
+    nb_taches INTEGER DEFAULT 0,
+    avancement INTEGER DEFAULT 0,
+    data TEXT NOT NULL DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
