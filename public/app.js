@@ -187,6 +187,10 @@ function setStatus(message, kind = "info") {
   const el = document.getElementById("statusLabel");
   el.textContent = message;
   el.className = `status-label status-${kind}`;
+  document.querySelectorAll("[data-mirror-status]").forEach(m => {
+    m.textContent = message;
+    m.className = `status-label status-${kind}`;
+  });
 }
 
 /* ===================================================================== */
@@ -1250,8 +1254,12 @@ async function buildGenerateFormData() {
     equipement: document.getElementById("fEquipement").value.trim(),
     serie: document.getElementById("fSerie").value.trim(),
     observations: document.getElementById("fObservations").value.trim(),
-    filename: document.getElementById("fFilename").value.trim() || "rapport",
-    items: isArmoireTemplate(state.template) ? [] : getItemsPayload(),
+    filename: (state.template === "demande_materiel_smati" ? document.getElementById("dmFilename").value.trim()
+      : state.template === "planning_smati" ? document.getElementById("plFilename").value.trim()
+      : document.getElementById("fFilename").value.trim()) || "rapport",
+    items: (isArmoireTemplate(state.template) || isStandaloneTemplate(state.template)) ? [] : getItemsPayload(),
+    demande: state.template === "demande_materiel_smati" ? getDemandePayload() : null,
+    planning: state.template === "planning_smati" ? getPlanningPayload() : null,
     armoire: isArmoireTemplate(state.template) ? getArmoirePayload() : null,
     content,
     signatures: {
@@ -1458,7 +1466,10 @@ function wireStaticButtons() {
 /*  Sélecteur de template de rapport                                     */
 /* ===================================================================== */
 const isArmoireTemplate = t => t === "verif_armoire" || t === "verif_armoire_crealis";
-const isCrealisTemplate = t => t === "crealis" || t === "verif_armoire_crealis";
+const isSmatiTemplate = t => t === "verif_armoire_crealis" || t === "demande_materiel_smati" || t === "planning_smati";
+// Le thème clair commun (base Crealis) sert aussi aux onglets SMATI, qui le surchargent en rouge/orange.
+const isCrealisTemplate = t => t === "crealis" || isSmatiTemplate(t);
+const isStandaloneTemplate = t => t === "demande_materiel_smati" || t === "planning_smati";
 
 function applyTemplateVisibility(template) {
   document.querySelectorAll(".tpl-panel").forEach(panel => {
@@ -1468,9 +1479,12 @@ function applyTemplateVisibility(template) {
   document.documentElement.classList.toggle("theme-crealis", isCrealisTemplate(template));
   applyBrandForTemplate(template);
   // Onglet SMATI : palette rouge/orange + fond animé 3D (uniquement ici).
-  const isSmati = template === "verif_armoire_crealis";
-  document.documentElement.classList.toggle("theme-smati", isSmati);
-  if (window.SmatiBg) { isSmati ? window.SmatiBg.start() : window.SmatiBg.stop(); }
+  document.documentElement.classList.toggle("theme-smati", isSmatiTemplate(template));
+  // Les onglets "Demande de matériel" / "Planning" occupent toute la page : pas de panneaux partagés.
+  document.documentElement.classList.toggle("standalone-tpl", isStandaloneTemplate(template));
+  if (window.SmatiBg) { template === "verif_armoire_crealis" ? window.SmatiBg.start() : window.SmatiBg.stop(); }
+  if (template === "demande_materiel_smati") initDemandeMateriel();
+  if (template === "planning_smati") initPlanning();
 }
 
 // Bandeau du haut : logo + titre spécifiques à l'onglet Crealis (Climalife),
@@ -1485,6 +1499,8 @@ const BRAND_CREALIS = {
   title: "Compte Rendu Intervention SERVICES Climalife",
   alt: "Climalife",
 };
+const BRAND_SMATI_DM = { icon: "assets/logo-smati.png", title: "Demande de Matériel SMATI", alt: "SMATI" };
+const BRAND_SMATI_PL = { icon: "assets/logo-smati.png", title: "Planning de Réalisation SMATI", alt: "SMATI" };
 const BRAND_SMATI = {
   icon: "assets/logo-smati.png",
   title: "Vérification Armoire Electrique SMATI",
@@ -1492,6 +1508,8 @@ const BRAND_SMATI = {
 };
 function applyBrandForTemplate(template) {
   const brand = template === "verif_armoire_crealis" ? BRAND_SMATI
+    : template === "demande_materiel_smati" ? BRAND_SMATI_DM
+    : template === "planning_smati" ? BRAND_SMATI_PL
     : template === "crealis" ? BRAND_CREALIS : BRAND_DEFAULT;
   const icon = document.getElementById("brandIcon");
   const title = document.getElementById("brandTitle");
@@ -1501,6 +1519,207 @@ function applyBrandForTemplate(template) {
   icon.alt = brand.alt;
   title.textContent = brand.title;
   box.title = brand.title;
+}
+
+
+/* ===================================================================== */
+/*  SMATI : Demande de matériel + Planning de réalisation (Gantt)        */
+/* ===================================================================== */
+const $id = id => document.getElementById(id);
+const todayISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const stampOf = () => todayISO().replace(/-/g, "");
+
+document.querySelectorAll("[data-proxy]").forEach(btn => {
+  btn.addEventListener("click", () => $id(btn.dataset.proxy).click());
+});
+
+/* ---- Demande de matériel ---- */
+function addDmRow(values = {}) {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td><input type="text" class="dm-ref" placeholder="Réf."></td>
+    <td><input type="text" class="dm-des" placeholder="Désignation du matériel"></td>
+    <td><input type="number" class="dm-qte" min="0" step="any" value="1"></td>
+    <td><input type="text" class="dm-uni" placeholder="u" list="dmUnits"></td>
+    <td><input type="text" class="dm-obs" placeholder="Précision…"></td>
+    <td><button type="button" class="btn-icon dm-del" title="Supprimer la ligne">✕</button></td>`;
+  tr.querySelector(".dm-ref").value = values.ref || "";
+  tr.querySelector(".dm-des").value = values.designation || "";
+  if (values.qte !== undefined) tr.querySelector(".dm-qte").value = values.qte;
+  tr.querySelector(".dm-uni").value = values.unite || "";
+  tr.querySelector(".dm-obs").value = values.observations || "";
+  tr.querySelector(".dm-del").addEventListener("click", () => { tr.remove(); updateDmCount(); });
+  $id("dmBody").appendChild(tr);
+  updateDmCount();
+  return tr;
+}
+function updateDmCount() { $id("dmCount").textContent = $id("dmBody").children.length; }
+
+let dmReady = false;
+function initDemandeMateriel() {
+  if (!dmReady) {
+    dmReady = true;
+    const dl = document.createElement("datalist");
+    dl.id = "dmUnits";
+    ["u", "m", "ml", "kg", "lot", "boîte", "rouleau"].forEach(v => { const o = document.createElement("option"); o.value = v; dl.appendChild(o); });
+    document.body.appendChild(dl);
+    $id("dmAddRow").addEventListener("click", () => addDmRow().querySelector(".dm-ref").focus());
+    $id("dmDate").value = todayISO();
+    addDmRow();
+  }
+  if (!$id("dmFilename").value) $id("dmFilename").value = `Demande_Materiel_${stampOf()}`;
+}
+function getDemandePayload() {
+  const lignes = [...$id("dmBody").children].map(tr => ({
+    ref: tr.querySelector(".dm-ref").value.trim(),
+    designation: tr.querySelector(".dm-des").value.trim(),
+    qte: tr.querySelector(".dm-qte").value,
+    unite: tr.querySelector(".dm-uni").value.trim(),
+    observations: tr.querySelector(".dm-obs").value.trim(),
+  })).filter(l => l.ref || l.designation);
+  const v = id => $id(id).value.trim();
+  return {
+    affaire: v("dmAffaire"), date: v("dmDate"), demandeur: v("dmDemandeur"), client: v("dmClient"),
+    site: v("dmSite"), fournisseur: v("dmFournisseur"), livraison: v("dmLivraison"), lieu: v("dmLieu"),
+    urgence: $id("dmUrgence").value, observations: v("dmObservations"), lignes,
+  };
+}
+
+/* ---- Planning / Gantt ---- */
+const DAY_MS = 86400000;
+const parseISO = s => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || ""); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null; };
+const fmtFR = ms => { const d = new Date(ms); return `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}`; };
+const MONTHS_FR = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+function isoWeek(ms) {
+  const d = new Date(ms); const day = (d.getUTCDay() + 6) % 7;      // lundi = 0
+  const thursday = ms - day * DAY_MS + 3 * DAY_MS;
+  const y = new Date(thursday).getUTCFullYear();
+  const jan4 = Date.UTC(y, 0, 4);
+  return Math.floor((thursday - (jan4 - ((new Date(jan4).getUTCDay() + 6) % 7) * DAY_MS)) / (7 * DAY_MS)) + 1;
+}
+
+// Même règle côté serveur (index.py, _gantt_layout) : ≤ 45 jours → colonnes "jour", sinon "semaine".
+function ganttLayout(tasks) {
+  const valid = tasks.filter(t => parseISO(t.debut) !== null && parseISO(t.fin) !== null && parseISO(t.fin) >= parseISO(t.debut));
+  if (!valid.length) return null;
+  const min = Math.min(...valid.map(t => parseISO(t.debut)));
+  const max = Math.max(...valid.map(t => parseISO(t.fin)));
+  const mode = (max - min) / DAY_MS + 1 <= 45 ? "day" : "week";
+  const step = mode === "day" ? 1 : 7;
+  let cursor = mode === "day" ? min : min - ((new Date(min).getUTCDay() + 6) % 7) * DAY_MS;
+  const cols = [];
+  while (cursor <= max && cols.length < 60) {
+    cols.push({ start: cursor, end: cursor + step * DAY_MS - DAY_MS });
+    cursor += step * DAY_MS;
+  }
+  const rows = tasks.map(t => {
+    const a = parseISO(t.debut), b = parseISO(t.fin);
+    if (a === null || b === null || b < a) return { task: t, from: -1, to: -1, done: 0 };
+    const idx = cols.map((c, i) => (a <= c.end && b >= c.start) ? i : -1).filter(i => i >= 0);
+    if (!idx.length) return { task: t, from: -1, to: -1, done: 0 };
+    const pct = Math.max(0, Math.min(100, parseFloat(t.avancement) || 0));
+    return { task: t, from: idx[0], to: idx[idx.length - 1], done: Math.round(idx.length * pct / 100) };
+  });
+  return { mode, cols, rows };
+}
+
+function addPlRow(values = {}) {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td><input type="text" class="pl-nom" placeholder="Nom de la tâche"></td>
+    <td><input type="text" class="pl-resp" placeholder="Responsable"></td>
+    <td><input type="date" class="pl-debut"></td>
+    <td><input type="date" class="pl-fin"></td>
+    <td><input type="number" class="pl-pct" min="0" max="100" step="5" value="0"></td>
+    <td><button type="button" class="btn-icon pl-del" title="Supprimer la tâche">✕</button></td>`;
+  tr.querySelector(".pl-nom").value = values.nom || "";
+  tr.querySelector(".pl-resp").value = values.responsable || "";
+  tr.querySelector(".pl-debut").value = values.debut || "";
+  tr.querySelector(".pl-fin").value = values.fin || "";
+  if (values.avancement !== undefined) tr.querySelector(".pl-pct").value = values.avancement;
+  tr.querySelector(".pl-debut").addEventListener("change", () => {
+    const f = tr.querySelector(".pl-fin"), d = tr.querySelector(".pl-debut");
+    if (d.value && (!f.value || f.value < d.value)) f.value = d.value;   // fin jamais avant début
+    renderGantt();
+  });
+  tr.querySelectorAll("input").forEach(i => i.addEventListener("input", renderGantt));
+  tr.querySelector(".pl-del").addEventListener("click", () => { tr.remove(); renderGantt(); });
+  $id("plBody").appendChild(tr);
+  renderGantt();
+  return tr;
+}
+
+function getPlanningTasks() {
+  return [...$id("plBody").children].map(tr => ({
+    nom: tr.querySelector(".pl-nom").value.trim(),
+    responsable: tr.querySelector(".pl-resp").value.trim(),
+    debut: tr.querySelector(".pl-debut").value,
+    fin: tr.querySelector(".pl-fin").value,
+    avancement: tr.querySelector(".pl-pct").value,
+  })).filter(t => t.nom || t.debut || t.fin);
+}
+
+function renderGantt() {
+  const host = $id("plGantt");
+  if (!host) return;
+  const tasks = getPlanningTasks();
+  const L = ganttLayout(tasks);
+  const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  if (!L) {
+    host.innerHTML = `<div class="gantt-empty">Saisissez au moins une tâche avec une date de début et de fin pour afficher le diagramme.</div>`;
+    $id("plSummary").textContent = "";
+    return;
+  }
+  const today = parseISO(todayISO());
+  const months = [];
+  L.cols.forEach(c => {
+    const d = new Date(c.start); const label = `${MONTHS_FR[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+    if (months.length && months[months.length - 1].label === label) months[months.length - 1].span++;
+    else months.push({ label, span: 1 });
+  });
+  const colClass = c => {
+    const we = L.mode === "day" ? [0, 6].includes(new Date(c.start).getUTCDay()) : false;
+    return `${we ? "g-we " : ""}${today >= c.start && today <= c.end ? "g-today" : ""}`;
+  };
+  let html = `<table class="gantt-table"><thead>
+    <tr><th rowspan="2" class="g-name">Tâche</th><th rowspan="2" class="g-resp">Resp.</th>${months.map(m => `<th colspan="${m.span}" class="g-month">${m.label}</th>`).join("")}</tr>
+    <tr>${L.cols.map(c => `<th class="g-col ${colClass(c)}">${L.mode === "day" ? new Date(c.start).getUTCDate() : "S" + isoWeek(c.start)}</th>`).join("")}</tr></thead><tbody>`;
+  L.rows.forEach(r => {
+    html += `<tr><td class="g-name" title="${esc(r.task.nom)}">${esc(r.task.nom || "—")}</td><td class="g-resp">${esc(r.task.responsable || "")}</td>`;
+    L.cols.forEach((c, i) => {
+      const on = r.from >= 0 && i >= r.from && i <= r.to;
+      const cls = on ? (i - r.from < r.done ? "g-on g-done" : "g-on g-todo") : "";
+      html += `<td class="${cls} ${colClass(c)}"></td>`;
+    });
+    html += `</tr>`;
+  });
+  host.innerHTML = html + `</tbody></table>`;
+
+  const valid = L.rows.filter(r => r.from >= 0);
+  const avg = valid.length ? Math.round(valid.reduce((a, r) => a + Math.max(0, Math.min(100, parseFloat(r.task.avancement) || 0)), 0) / valid.length) : 0;
+  const min = Math.min(...valid.map(r => parseISO(r.task.debut))), max = Math.max(...valid.map(r => parseISO(r.task.fin)));
+  $id("plSummary").textContent = `${valid.length} tâche(s) · du ${fmtFR(min)} au ${fmtFR(max)} · avancement global ${avg} %`;
+}
+
+let plReady = false;
+function initPlanning() {
+  if (!plReady) {
+    plReady = true;
+    $id("plAddRow").addEventListener("click", () => addPlRow().querySelector(".pl-nom").focus());
+    addPlRow();
+  }
+  if (!$id("plFilename").value) $id("plFilename").value = `Planning_${stampOf()}`;
+  renderGantt();
+}
+function getPlanningPayload() {
+  return {
+    projet: $id("plProjet").value.trim(), affaire: $id("plAffaire").value.trim(),
+    client: $id("plClient").value.trim(), responsable: $id("plResponsable").value.trim(),
+    taches: getPlanningTasks(),
+  };
 }
 
 document.querySelectorAll(".template-tab").forEach(tab => {

@@ -333,11 +333,12 @@ def _current_user_id():
 # ----------------------------------------------------------------------
 #  Rôles : droits d'accès aux onglets (types de rapport)
 # ----------------------------------------------------------------------
-ALL_TEMPLATE_IDS = ("intervention", "verif_armoire", "prep_intervention", "crealis", "verif_armoire_crealis")
+ALL_TEMPLATE_IDS = ("intervention", "verif_armoire", "prep_intervention", "crealis", "verif_armoire_crealis",
+                    "demande_materiel_smati", "planning_smati")
 ROLE_TEMPLATES = {
     "admin": ALL_TEMPLATE_IDS,
     "crealis": ("crealis",),
-    "smati": ("verif_armoire_crealis",),
+    "smati": ("verif_armoire_crealis", "demande_materiel_smati", "planning_smati"),
     "mounier": ("intervention", "verif_armoire", "prep_intervention"),
 }
 DEFAULT_ROLE = "mounier"
@@ -540,7 +541,11 @@ REPORT_TEMPLATES = {
     "prep_intervention": {"label": "Préparation Intervention", "doc_title": "PRÉPARATION INTERVENTION"},
     "verif_armoire_crealis": {"label": "Vérification Armoire Électrique SMATI", "doc_title": "VÉRIFICATION ARMOIRE ÉLECTRIQUE SMATI"},
     "crealis": {"label": "Compte Rendu Intervention Crealis", "doc_title": "COMPTE RENDU D'INTERVENTION CREALIS"},
+    "demande_materiel_smati": {"label": "Demande de Matériel", "doc_title": "DEMANDE DE MATÉRIEL SMATI"},
+    "planning_smati": {"label": "Planning de Réalisation", "doc_title": "PLANNING DE RÉALISATION SMATI"},
 }
+# Documents SMATI autonomes (contenu propre, sans le bloc « détails d'intervention »).
+STANDALONE_TEMPLATE_IDS = ("demande_materiel_smati", "planning_smati")
 DEFAULT_TEMPLATE_ID = "intervention"
 # Modèles qui utilisent la grille de vérification armoire (et sa notation).
 ARMOIRE_TEMPLATE_IDS = ("verif_armoire", "verif_armoire_crealis")
@@ -821,6 +826,403 @@ def _add_watermark_stamp_docx(doc, text, color_hex):
         doc.element.body.insert(0, p._p)
     except Exception as e:
         print(f"Avertissement : filigrane du résultat du contrôle ignoré ({e})")
+
+
+# ======================================================================
+#  SMATI : « Demande de matériel » et « Planning de réalisation »
+#  (documents autonomes : pas de bloc « détails d'intervention »)
+# ======================================================================
+_SMATI_RED = "D9251D"
+_SMATI_ORANGE = "F6A53B"
+_SMATI_TINT = "FCE9E3"
+_MONTHS_FR = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]
+_GANTT_MAX_COLS = 60
+
+
+def _parse_iso_date(s):
+    import datetime
+    try:
+        return datetime.date.fromisoformat(str(s or "").strip())
+    except ValueError:
+        return None
+
+
+def _fr_date(s):
+    d = _parse_iso_date(s)
+    return d.strftime("%d/%m/%Y") if d else (str(s or "").strip() or "N/C")
+
+
+def _gantt_layout(tasks):
+    """Même règle que le front (app.js, ganttLayout) : <= 45 jours -> colonnes
+    « jour », sinon « semaine ». Renvoie None si aucune tâche datée valide."""
+    import datetime
+    one = datetime.timedelta(days=1)
+    parsed = []
+    for t in tasks:
+        a, b = _parse_iso_date(t.get("debut")), _parse_iso_date(t.get("fin"))
+        parsed.append((t, a, b, a is not None and b is not None and b >= a))
+    valid = [p for p in parsed if p[3]]
+    if not valid:
+        return None
+    lo = min(p[1] for p in valid)
+    hi = max(p[2] for p in valid)
+    mode = "day" if (hi - lo).days + 1 <= 45 else "week"
+    step = 1 if mode == "day" else 7
+    cursor = lo if mode == "day" else lo - datetime.timedelta(days=lo.weekday())
+    cols = []
+    while cursor <= hi and len(cols) < _GANTT_MAX_COLS:
+        cols.append((cursor, cursor + datetime.timedelta(days=step - 1)))
+        cursor += datetime.timedelta(days=step)
+    rows = []
+    for t, a, b, ok in parsed:
+        idx = [i for i, (cs, ce) in enumerate(cols) if ok and a <= ce and b >= cs]
+        if not idx:
+            rows.append({"task": t, "from": -1, "to": -1, "done": 0})
+            continue
+        try:
+            pct = max(0.0, min(100.0, float(t.get("avancement") or 0)))
+        except (TypeError, ValueError):
+            pct = 0.0
+        rows.append({"task": t, "from": idx[0], "to": idx[-1], "done": round(len(idx) * pct / 100.0)})
+    return {"mode": mode, "cols": cols, "rows": rows}
+
+
+def _gantt_col_label(layout, col):
+    if layout["mode"] == "day":
+        return str(col[0].day)
+    week = col[0].isocalendar()[1]
+    return "S%d" % week if len(layout["cols"]) <= 26 else str(week)   # colonnes très étroites : numéro seul
+
+
+def _month_text(label, span):
+    """Libellé de mois adapté à la largeur disponible (span = nb de colonnes)."""
+    if span >= 4:
+        return label
+    if span >= 2:
+        return label.split(" ")[0]
+    return label[:1].upper()
+
+
+def _gantt_months(layout):
+    """[(libellé, nb_colonnes)] pour la ligne d'en-tête des mois."""
+    out = []
+    for cs, _ in layout["cols"]:
+        label = "%s %d" % (_MONTHS_FR[cs.month - 1], cs.year)
+        if out and out[-1][0] == label:
+            out[-1][1] += 1
+        else:
+            out.append([label, 1])
+    return out
+
+
+def _planning_summary(layout):
+    valid = [r for r in layout["rows"] if r["from"] >= 0]
+    pcts = []
+    for r in valid:
+        try:
+            pcts.append(max(0.0, min(100.0, float(r["task"].get("avancement") or 0))))
+        except (TypeError, ValueError):
+            pcts.append(0.0)
+    avg = round(sum(pcts) / len(pcts)) if pcts else 0
+    lo = min(_parse_iso_date(r["task"]["debut"]) for r in valid) if valid else None
+    hi = max(_parse_iso_date(r["task"]["fin"]) for r in valid) if valid else None
+    return len(valid), lo, hi, avg
+
+
+def _docx_shade(cell, hex_fill):
+    tcPr = cell._tc.get_or_add_tcPr()
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:val"), "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"), hex_fill)
+    tcPr.append(shd)
+
+
+def _docx_cell_text(cell, text, bold=False, size=9, color=None, align=None):
+    p = cell.paragraphs[0]
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after = Pt(0)
+    if align:
+        p.alignment = align
+    r = p.add_run(str(text))
+    r.font.size = Pt(size)
+    r.font.bold = bold
+    if color:
+        r.font.color.rgb = RGBColor.from_string(color)
+
+
+def _docx_kv_table(doc, pairs):
+    tbl = doc.add_table(rows=len(pairs), cols=2)
+    tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+    tbl.style = "Table Grid"
+    for i, (k, v) in enumerate(pairs):
+        _docx_cell_text(tbl.rows[i].cells[0], k, bold=True)
+        _docx_shade(tbl.rows[i].cells[0], _SMATI_TINT)
+        _docx_cell_text(tbl.rows[i].cells[1], v or "N/C")
+        tbl.rows[i].cells[0].width = Cm(5)
+        tbl.rows[i].cells[1].width = Cm(12)
+    return tbl
+
+
+def _render_demande_docx(doc, d):
+    _docx_kv_table(doc, [
+        ("N° d'affaire :", d.get("affaire")),
+        ("Date de la demande :", _fr_date(d.get("date"))),
+        ("Demandeur :", d.get("demandeur")),
+        ("Client :", d.get("client")),
+        ("Chantier / site :", d.get("site")),
+        ("Fournisseur :", d.get("fournisseur")),
+        ("Livraison souhaitée le :", _fr_date(d.get("livraison")) if d.get("livraison") else "N/C"),
+        ("Lieu de livraison :", d.get("lieu")),
+        ("Urgence :", d.get("urgence") or "Normale"),
+    ])
+    doc.add_paragraph()
+    doc.add_heading("Matériel demandé", level=1)
+    lignes = d.get("lignes") or []
+    heads = ["Référence", "Désignation", "Qté", "Unité", "Observations"]
+    widths = [Cm(2.8), Cm(6.4), Cm(1.4), Cm(1.6), Cm(4.8)]
+    tbl = doc.add_table(rows=1 + max(len(lignes), 1), cols=5)
+    tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+    tbl.style = "Table Grid"
+    for i, h in enumerate(heads):
+        c = tbl.rows[0].cells[i]
+        _docx_shade(c, _SMATI_RED)
+        _docx_cell_text(c, h, bold=True, color="FFFFFF")
+    if not lignes:
+        _docx_cell_text(tbl.rows[1].cells[1], "Aucune ligne saisie.")
+    for r, l in enumerate(lignes, start=1):
+        vals = [l.get("ref", ""), l.get("designation", ""), l.get("qte", ""), l.get("unite", ""), l.get("observations", "")]
+        for i, v in enumerate(vals):
+            _docx_cell_text(tbl.rows[r].cells[i], v)
+    for row in tbl.rows:
+        for i, w in enumerate(widths):
+            row.cells[i].width = w
+    doc.add_paragraph()
+    doc.add_heading("Observations", level=1)
+    doc.add_paragraph((d.get("observations") or "").strip() or "Aucune observation particulière.")
+
+
+def _render_planning_docx(doc, pl):
+    _docx_kv_table(doc, [
+        ("Projet / affaire :", pl.get("projet")),
+        ("N° d'affaire :", pl.get("affaire")),
+        ("Client :", pl.get("client")),
+        ("Responsable du planning :", pl.get("responsable")),
+    ])
+    doc.add_paragraph()
+    tasks = pl.get("taches") or []
+    layout = _gantt_layout(tasks)
+    doc.add_heading("Diagramme de Gantt", level=1)
+    if not layout:
+        doc.add_paragraph("Aucune tâche avec dates de début et de fin valides.")
+        return
+    n, lo, hi, avg = _planning_summary(layout)
+    doc.add_paragraph("%d tâche(s) — du %s au %s — avancement global %d %%" % (n, lo.strftime("%d/%m/%Y"), hi.strftime("%d/%m/%Y"), avg))
+
+    cols = layout["cols"]
+    ncols = 2 + len(cols)
+    tbl = doc.add_table(rows=2 + len(layout["rows"]), cols=ncols)
+    tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+    tbl.style = "Table Grid"
+    tbl.autofit = False
+    name_w, resp_w = Cm(3.8), Cm(1.8)
+    grid_w = Cm(17.0) - name_w - resp_w
+    col_w = int(grid_w / len(cols))
+    tbl.columns[0].width = name_w
+    tbl.columns[1].width = resp_w
+    for i in range(len(cols)):
+        tbl.columns[2 + i].width = col_w
+    for row in tbl.rows:
+        row.cells[0].width = name_w
+        row.cells[1].width = resp_w
+        for i in range(len(cols)):
+            row.cells[2 + i].width = col_w
+    tblPr = tbl._tbl.tblPr
+    layout_el = OxmlElement("w:tblLayout")
+    layout_el.set(qn("w:type"), "fixed")
+    tblPr.append(layout_el)
+    mar = OxmlElement("w:tblCellMar")      # marges réduites : les colonnes de dates sont très étroites
+    for side, w in (("left", 20), ("right", 20)):
+        m = OxmlElement("w:" + side)
+        m.set(qn("w:w"), str(w))
+        m.set(qn("w:type"), "dxa")
+        mar.append(m)
+    tblPr.append(mar)
+    # En-têtes : ligne des mois (cellules fusionnées) + ligne des jours/semaines.
+    a = tbl.cell(0, 0).merge(tbl.cell(1, 0))
+    _docx_cell_text(a, "Tâche", bold=True, size=8, color="FFFFFF"); _docx_shade(a, _SMATI_RED)
+    b = tbl.cell(0, 1).merge(tbl.cell(1, 1))
+    _docx_cell_text(b, "Resp.", bold=True, size=8, color="FFFFFF"); _docx_shade(b, _SMATI_RED)
+    pos = 2
+    for label, span in _gantt_months(layout):
+        c = tbl.cell(0, pos).merge(tbl.cell(0, pos + span - 1)) if span > 1 else tbl.cell(0, pos)
+        _docx_cell_text(c, _month_text(label, span), bold=True, size=6.5, color="FFFFFF", align=WD_ALIGN_PARAGRAPH.CENTER)
+        _docx_shade(c, _SMATI_RED)
+        pos += span
+    for i, col in enumerate(cols):
+        c = tbl.cell(1, 2 + i)
+        _docx_cell_text(c, _gantt_col_label(layout, col), bold=True, size=4.5, align=WD_ALIGN_PARAGRAPH.CENTER)
+        _docx_shade(c, _SMATI_TINT)
+    for r, row in enumerate(layout["rows"]):
+        cells = tbl.rows[2 + r].cells
+        _docx_cell_text(cells[0], row["task"].get("nom") or "—", size=7.5)
+        _docx_cell_text(cells[1], row["task"].get("responsable") or "", size=7)
+        for i in range(len(cols)):
+            if row["from"] >= 0 and row["from"] <= i <= row["to"]:
+                _docx_shade(cells[2 + i], _SMATI_RED if i - row["from"] < row["done"] else _SMATI_ORANGE)
+            elif layout["mode"] == "day" and cols[i][0].weekday() >= 5:
+                _docx_shade(cells[2 + i], "F3EEEC")
+    leg = doc.add_paragraph()
+    leg.add_run("■ ").font.color.rgb = RGBColor.from_string(_SMATI_RED)
+    leg.add_run("Réalisé    ")
+    leg.add_run("■ ").font.color.rgb = RGBColor.from_string(_SMATI_ORANGE)
+    leg.add_run("Prévu")
+    for r in leg.runs:
+        r.font.size = Pt(8.5)
+
+    doc.add_heading("Détail des tâches", level=1)
+    dt = doc.add_table(rows=1 + len(tasks), cols=6)
+    dt.alignment = WD_TABLE_ALIGNMENT.CENTER
+    dt.style = "Table Grid"
+    for i, h in enumerate(["Tâche", "Responsable", "Début", "Fin", "Durée (j)", "Avancement"]):
+        _docx_shade(dt.rows[0].cells[i], _SMATI_RED)
+        _docx_cell_text(dt.rows[0].cells[i], h, bold=True, color="FFFFFF")
+    for r, t in enumerate(tasks, start=1):
+        a, b = _parse_iso_date(t.get("debut")), _parse_iso_date(t.get("fin"))
+        dur = str((b - a).days + 1) if a and b and b >= a else "—"
+        vals = [t.get("nom", ""), t.get("responsable", ""), _fr_date(t.get("debut")) if t.get("debut") else "", _fr_date(t.get("fin")) if t.get("fin") else "", dur, "%s %%" % (t.get("avancement") or 0)]
+        for i, v in enumerate(vals):
+            _docx_cell_text(dt.rows[r].cells[i], v)
+
+
+def _standalone_story_pdf(payload, style_h2, style_body, usable_w):
+    """Contenu PDF (liste de flowables reportlab) des onglets SMATI autonomes."""
+    from reportlab.lib.units import cm
+    from reportlab.lib import colors
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+
+    red, orange, tint = colors.HexColor("#" + _SMATI_RED), colors.HexColor("#" + _SMATI_ORANGE), colors.HexColor("#" + _SMATI_TINT)
+    grid = colors.HexColor("#E6C3B9")
+    small = ParagraphStyle("sm", parent=style_body, fontSize=8, leading=10)
+    head = ParagraphStyle("hd", parent=style_body, fontSize=8.5, leading=10, textColor=colors.white, fontName="Helvetica-Bold")
+    story = []
+
+    def kv_table(pairs):
+        data = [[Paragraph("<b>%s</b>" % k, style_body), Paragraph(_xml_escape(v) or "N/C", style_body)] for k, v in pairs]
+        t = Table(data, colWidths=[5 * cm, usable_w - 5 * cm])
+        t.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.5, grid), ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("BACKGROUND", (0, 0), (0, -1), tint),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        return t
+
+    if payload.get("template") == "demande_materiel_smati":
+        d = payload.get("demande") or {}
+        story.append(kv_table([
+            ("N° d'affaire :", d.get("affaire")), ("Date de la demande :", _fr_date(d.get("date"))),
+            ("Demandeur :", d.get("demandeur")), ("Client :", d.get("client")),
+            ("Chantier / site :", d.get("site")), ("Fournisseur :", d.get("fournisseur")),
+            ("Livraison souhaitée le :", _fr_date(d.get("livraison")) if d.get("livraison") else "N/C"),
+            ("Lieu de livraison :", d.get("lieu")), ("Urgence :", d.get("urgence") or "Normale"),
+        ]))
+        story.append(Spacer(1, 8))
+        story.append(Paragraph("Matériel demandé", style_h2))
+        lignes = d.get("lignes") or []
+        data = [[Paragraph(h, head) for h in ("Référence", "Désignation", "Qté", "Unité", "Observations")]]
+        for l in lignes:
+            data.append([Paragraph(_xml_escape(l.get(k, "")), small) for k in ("ref", "designation", "qte", "unite", "observations")])
+        if not lignes:
+            data.append(["", Paragraph("Aucune ligne saisie.", small), "", "", ""])
+        w = [2.8 * cm, 6.4 * cm, 1.4 * cm, 1.6 * cm]
+        t = Table(data, colWidths=w + [usable_w - sum(w)], repeatRows=1)
+        t.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.5, grid), ("BACKGROUND", (0, 0), (-1, 0), red),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ]))
+        story.append(t)
+        story.append(Spacer(1, 8))
+        story.append(Paragraph("Observations", style_h2))
+        story.append(Paragraph(_xml_escape((d.get("observations") or "").strip()) or "Aucune observation particulière.", style_body))
+        return story
+
+    pl = payload.get("planning") or {}
+    story.append(kv_table([
+        ("Projet / affaire :", pl.get("projet")), ("N° d'affaire :", pl.get("affaire")),
+        ("Client :", pl.get("client")), ("Responsable du planning :", pl.get("responsable")),
+    ]))
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("Diagramme de Gantt", style_h2))
+    tasks = pl.get("taches") or []
+    layout = _gantt_layout(tasks)
+    if not layout:
+        story.append(Paragraph("Aucune tâche avec dates de début et de fin valides.", style_body))
+        return story
+    n, lo, hi, avg = _planning_summary(layout)
+    story.append(Paragraph("%d tâche(s) &mdash; du %s au %s &mdash; avancement global %d %%" % (n, lo.strftime("%d/%m/%Y"), hi.strftime("%d/%m/%Y"), avg), style_body))
+    story.append(Spacer(1, 4))
+
+    cols = layout["cols"]
+    name_w, resp_w = 3.8 * cm, 1.8 * cm
+    cw = (usable_w - name_w - resp_w) / len(cols)
+    tiny = ParagraphStyle("tn", parent=style_body, fontSize=5.5, leading=6.5, alignment=1)
+    row0 = [Paragraph("Tâche", head), Paragraph("Resp.", head)] + [""] * len(cols)
+    row1 = ["", ""] + [Paragraph(_gantt_col_label(layout, c), tiny) for c in cols]
+    data = [row0, row1]
+    style = [
+        ("GRID", (0, 0), (-1, -1), 0.25, grid),
+        ("BACKGROUND", (0, 0), (-1, 0), red), ("BACKGROUND", (2, 1), (-1, 1), tint),
+        ("SPAN", (0, 0), (0, 1)), ("SPAN", (1, 0), (1, 1)),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 1), ("RIGHTPADDING", (0, 0), (-1, -1), 1),
+        ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+    ]
+    pos = 2
+    month_style = ParagraphStyle("mo", parent=head, fontSize=6.5, leading=8, alignment=1)
+    for label, span in _gantt_months(layout):
+        row0[pos] = Paragraph(_month_text(label, span), month_style)
+        if span > 1:
+            style.append(("SPAN", (pos, 0), (pos + span - 1, 0)))
+        pos += span
+    for r, row in enumerate(layout["rows"]):
+        line = [Paragraph(_xml_escape(row["task"].get("nom") or "—"), small), Paragraph(_xml_escape(row["task"].get("responsable") or ""), ParagraphStyle("rs", parent=small, fontSize=7))] + [""] * len(cols)
+        data.append(line)
+        ri = 2 + r
+        for i in range(len(cols)):
+            if row["from"] >= 0 and row["from"] <= i <= row["to"]:
+                style.append(("BACKGROUND", (2 + i, ri), (2 + i, ri), red if i - row["from"] < row["done"] else orange))
+            elif layout["mode"] == "day" and cols[i][0].weekday() >= 5:
+                style.append(("BACKGROUND", (2 + i, ri), (2 + i, ri), colors.HexColor("#F3EEEC")))
+    gt = Table(data, colWidths=[name_w, resp_w] + [cw] * len(cols), repeatRows=2)
+    gt.setStyle(TableStyle(style))
+    story.append(gt)
+    story.append(Spacer(1, 3))
+    story.append(Paragraph('<font color="#%s">&#9632;</font> Réalisé &nbsp;&nbsp; <font color="#%s">&#9632;</font> Prévu' % (_SMATI_RED, _SMATI_ORANGE), small))
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("Détail des tâches", style_h2))
+    data = [[Paragraph(h, head) for h in ("Tâche", "Responsable", "Début", "Fin", "Durée (j)", "Avancement")]]
+    for t in tasks:
+        a, b = _parse_iso_date(t.get("debut")), _parse_iso_date(t.get("fin"))
+        dur = str((b - a).days + 1) if a and b and b >= a else "—"
+        data.append([Paragraph(_xml_escape(t.get("nom", "")), small), Paragraph(_xml_escape(t.get("responsable", "")), small),
+                     _fr_date(t.get("debut")) if t.get("debut") else "", _fr_date(t.get("fin")) if t.get("fin") else "",
+                     dur, "%s %%" % (t.get("avancement") or 0)])
+    w = [6 * cm, 3 * cm, 2 * cm, 2 * cm, 1.6 * cm]
+    dt = Table(data, colWidths=w + [usable_w - sum(w)], repeatRows=1)
+    dt.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.5, grid), ("BACKGROUND", (0, 0), (-1, 0), red),
+        ("FONTSIZE", (0, 1), (-1, -1), 8), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    story.append(dt)
+    return story
+
+
+def _xml_escape(v):
+    return str(v if v is not None else "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _render_armoire_section_docx(doc, armoire):
@@ -1242,95 +1644,101 @@ def build_report_docx(payload, photos, logo_bytes=None):
         t_title = doc.add_heading(get_template_doc_title(payload), level=0)
         t_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        tbl = doc.add_table(rows=9, cols=2)
-        tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-        tbl.style = 'Table Grid'
+        standalone = payload.get("template") in STANDALONE_TEMPLATE_IDS
+        if payload.get("template") == "demande_materiel_smati":
+            _render_demande_docx(doc, payload.get("demande") or {})
+        elif payload.get("template") == "planning_smati":
+            _render_planning_docx(doc, payload.get("planning") or {})
+        else:
+            tbl = doc.add_table(rows=9, cols=2)
+            tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+            tbl.style = 'Table Grid'
 
-        meta = [
-            ("N° Dossier :", payload.get("folder", "")),
-            ("Date :", payload.get("date", "")),
-            ("Technicien :", payload.get("technicien", "")),
-            ("Client :", payload.get("client", "")),
-            ("Site :", payload.get("site", "")),
-            ("Adresse Client :", payload.get("adresse", "")),
-            ("Contact Client :", payload.get("contact", "")),
-            ("Matériel :", payload.get("equipement", "")),
-            ("N° de Série :", payload.get("serie", "")),
-        ]
-        for i, (k, v) in enumerate(meta):
-            tbl.rows[i].cells[0].text = k
-            tbl.rows[i].cells[1].text = v or "N/C"
-            tbl.rows[i].cells[0].paragraphs[0].runs[0].font.bold = True
+            meta = [
+                ("N° Dossier :", payload.get("folder", "")),
+                ("Date :", payload.get("date", "")),
+                ("Technicien :", payload.get("technicien", "")),
+                ("Client :", payload.get("client", "")),
+                ("Site :", payload.get("site", "")),
+                ("Adresse Client :", payload.get("adresse", "")),
+                ("Contact Client :", payload.get("contact", "")),
+                ("Matériel :", payload.get("equipement", "")),
+                ("N° de Série :", payload.get("serie", "")),
+            ]
+            for i, (k, v) in enumerate(meta):
+                tbl.rows[i].cells[0].text = k
+                tbl.rows[i].cells[1].text = v or "N/C"
+                tbl.rows[i].cells[0].paragraphs[0].runs[0].font.bold = True
 
-        doc.add_paragraph()
+            doc.add_paragraph()
 
-        if payload.get("include_map") and (payload.get("adresse") or "").strip():
-            map_bytes = build_static_map_image(payload.get("adresse"))
-            if map_bytes:
-                map_path = os.path.join(
-                    tempfile.gettempdir(), f"map_{os.getpid()}_{random.randint(0, 999999)}.png"
-                )
-                with open(map_path, "wb") as f:
-                    f.write(map_bytes)
-                temp_files.append(map_path)
+            if payload.get("include_map") and (payload.get("adresse") or "").strip():
+                map_bytes = build_static_map_image(payload.get("adresse"))
+                if map_bytes:
+                    map_path = os.path.join(
+                        tempfile.gettempdir(), f"map_{os.getpid()}_{random.randint(0, 999999)}.png"
+                    )
+                    with open(map_path, "wb") as f:
+                        f.write(map_bytes)
+                    temp_files.append(map_path)
 
-                doc.add_heading("Localisation", level=1)
-                p_map = doc.add_paragraph()
-                p_map.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                p_map.add_run().add_picture(map_path, width=Inches(6.0))
-                p_cap = doc.add_paragraph()
-                p_cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                r_cap = p_cap.add_run(payload.get("adresse", ""))
-                r_cap.font.italic = True
-                r_cap.font.size = Pt(8.5)
-                doc.add_paragraph()
+                    doc.add_heading("Localisation", level=1)
+                    p_map = doc.add_paragraph()
+                    p_map.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    p_map.add_run().add_picture(map_path, width=Inches(6.0))
+                    p_cap = doc.add_paragraph()
+                    p_cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    r_cap = p_cap.add_run(payload.get("adresse", ""))
+                    r_cap.font.italic = True
+                    r_cap.font.size = Pt(8.5)
+                    doc.add_paragraph()
 
-        doc.add_heading("Observations & Travaux", level=1)
-        doc.add_paragraph((payload.get("observations") or "").strip() or "Aucune observation particulière.")
+            doc.add_heading("Observations & Travaux", level=1)
+            doc.add_paragraph((payload.get("observations") or "").strip() or "Aucune observation particulière.")
 
-        armoire = payload.get("armoire") if payload.get("template") in ARMOIRE_TEMPLATE_IDS else None
-        if armoire:
-            notation = _render_armoire_section_docx(doc, armoire)
-            if notation["verdict"]:
-                _add_watermark_stamp_docx(doc, notation["verdict_label"], notation["verdict_color_hex"])
+            armoire = payload.get("armoire") if payload.get("template") in ARMOIRE_TEMPLATE_IDS else None
+            if armoire:
+                notation = _render_armoire_section_docx(doc, armoire)
+                if notation["verdict"]:
+                    _add_watermark_stamp_docx(doc, notation["verdict_label"], notation["verdict_color_hex"])
 
-        items = payload.get("items") or []
-        if items and not armoire:
-            doc.add_heading("Matériel & Prestations", level=1)
-            tbl_item = doc.add_table(rows=len(items) + 2, cols=4)
-            tbl_item.alignment = WD_TABLE_ALIGNMENT.CENTER
-            tbl_item.style = 'Table Grid'
+            items = payload.get("items") or []
+            if items and not armoire:
+                doc.add_heading("Matériel & Prestations", level=1)
+                tbl_item = doc.add_table(rows=len(items) + 2, cols=4)
+                tbl_item.alignment = WD_TABLE_ALIGNMENT.CENTER
+                tbl_item.style = 'Table Grid'
 
-            headers = ["Désignation", "Qté", "P.U. HT", "Total HT"]
-            for i, h in enumerate(headers):
-                cell = tbl_item.rows[0].cells[i]
-                cell.text = h
-                cell.paragraphs[0].runs[0].font.bold = True
+                headers = ["Désignation", "Qté", "P.U. HT", "Total HT"]
+                for i, h in enumerate(headers):
+                    cell = tbl_item.rows[0].cells[i]
+                    cell.text = h
+                    cell.paragraphs[0].runs[0].font.bold = True
 
-            total_general_ht = 0.0
-            for r, item in enumerate(items):
-                desig = str(item.get("designation", ""))
-                try:
-                    qte = float(item.get("qte", 0) or 0)
-                except (TypeError, ValueError):
-                    qte = 0.0
-                try:
-                    pu = float(item.get("pu", 0) or 0)
-                except (TypeError, ValueError):
-                    pu = 0.0
-                row_total = qte * pu
-                total_general_ht += row_total
+                total_general_ht = 0.0
+                for r, item in enumerate(items):
+                    desig = str(item.get("designation", ""))
+                    try:
+                        qte = float(item.get("qte", 0) or 0)
+                    except (TypeError, ValueError):
+                        qte = 0.0
+                    try:
+                        pu = float(item.get("pu", 0) or 0)
+                    except (TypeError, ValueError):
+                        pu = 0.0
+                    row_total = qte * pu
+                    total_general_ht += row_total
 
-                tbl_item.rows[r + 1].cells[0].text = desig
-                tbl_item.rows[r + 1].cells[1].text = f"{qte:g}"
-                tbl_item.rows[r + 1].cells[2].text = f"{pu:.2f} €"
-                tbl_item.rows[r + 1].cells[3].text = f"{row_total:.2f} €"
+                    tbl_item.rows[r + 1].cells[0].text = desig
+                    tbl_item.rows[r + 1].cells[1].text = f"{qte:g}"
+                    tbl_item.rows[r + 1].cells[2].text = f"{pu:.2f} €"
+                    tbl_item.rows[r + 1].cells[3].text = f"{row_total:.2f} €"
 
-            total_row = tbl_item.rows[len(items) + 1]
-            total_row.cells[0].text = "TOTAL GENERAL HT"
-            total_row.cells[0].paragraphs[0].runs[0].font.bold = True
-            total_row.cells[3].text = f"{total_general_ht:.2f} €"
-            total_row.cells[3].paragraphs[0].runs[0].font.bold = True
+                total_row = tbl_item.rows[len(items) + 1]
+                total_row.cells[0].text = "TOTAL GENERAL HT"
+                total_row.cells[0].paragraphs[0].runs[0].font.bold = True
+                total_row.cells[3].text = f"{total_general_ht:.2f} €"
+                total_row.cells[3].paragraphs[0].runs[0].font.bold = True
 
         content = payload.get("content") or []
         if content:
@@ -1607,196 +2015,200 @@ def build_report_pdf(payload, photos, logo_bytes=None):
 
     story.append(Paragraph(get_template_doc_title(payload), style_h1))
 
-    meta = [
-        ("N° Dossier :", payload.get("folder", "")),
-        ("Date :", payload.get("date", "")),
-        ("Technicien :", payload.get("technicien", "")),
-        ("Client :", payload.get("client", "")),
-        ("Site :", payload.get("site", "")),
-        ("Adresse Client :", payload.get("adresse", "")),
-        ("Contact Client :", payload.get("contact", "")),
-        ("Matériel :", payload.get("equipement", "")),
-        ("N° de Série :", payload.get("serie", "")),
-    ]
-    meta_data = [
-        [Paragraph(f"<b>{k}</b>", style_body), Paragraph(v or "N/C", style_body)]
-        for k, v in meta
-    ]
-    meta_table = Table(meta_data, colWidths=[4.5 * cm, USABLE_W - 4.5 * cm])
-    meta_table.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F1F5F9")),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-    ]))
-    story.append(meta_table)
-    story.append(Spacer(1, 6))
-
-    if payload.get("include_map") and (payload.get("adresse") or "").strip():
-        map_bytes = build_static_map_image(payload.get("adresse"))
-        if map_bytes:
-            story.append(Paragraph("Localisation", style_h2))
-            map_img = scaled_image(map_bytes, USABLE_W, 9 * cm)
-            map_img.hAlign = "CENTER"
-            story.append(map_img)
-            story.append(Paragraph(payload.get("adresse", ""), style_caption))
-            story.append(Spacer(1, 6))
-
-    story.append(Paragraph("Observations &amp; Travaux", style_h2))
-    story.append(Paragraph(
-        (payload.get("observations") or "").strip() or "Aucune observation particulière.",
-        style_body,
-    ))
-
-    armoire = payload.get("armoire") if payload.get("template") in ARMOIRE_TEMPLATE_IDS else None
-    if armoire:
-        story.append(Paragraph("Grille de vérification &mdash; Fiche de contrôle armoire V2024", style_h2))
-
-        meta_a = [
-            ("N° d'Affaire :", armoire.get("affaire", "")),
-            ("Identification de l'armoire :", armoire.get("identification", "")),
-            ("Plan n° :", armoire.get("plan", "")),
-            ("Indice :", armoire.get("indice", "")),
-            ("Nom du câbleur :", armoire.get("cableur", "")),
-            ("Nom du contrôleur :", armoire.get("controleur", "")),
-            ("Type de contrôle :", "Réglementaire" if armoire.get("reglementaire") else "Non réglementaire"),
+    if payload.get("template") in STANDALONE_TEMPLATE_IDS:
+        story.extend(_standalone_story_pdf(payload, style_h2, style_body, USABLE_W))
+        armoire = None
+    else:
+        meta = [
+            ("N° Dossier :", payload.get("folder", "")),
+            ("Date :", payload.get("date", "")),
+            ("Technicien :", payload.get("technicien", "")),
+            ("Client :", payload.get("client", "")),
+            ("Site :", payload.get("site", "")),
+            ("Adresse Client :", payload.get("adresse", "")),
+            ("Contact Client :", payload.get("contact", "")),
+            ("Matériel :", payload.get("equipement", "")),
+            ("N° de Série :", payload.get("serie", "")),
         ]
-        meta_a_data = [
+        meta_data = [
             [Paragraph(f"<b>{k}</b>", style_body), Paragraph(v or "N/C", style_body)]
-            for k, v in meta_a
+            for k, v in meta
         ]
-        meta_a_table = Table(meta_a_data, colWidths=[5.5 * cm, USABLE_W - 5.5 * cm])
-        meta_a_table.setStyle(TableStyle([
+        meta_table = Table(meta_data, colWidths=[4.5 * cm, USABLE_W - 4.5 * cm])
+        meta_table.setStyle(TableStyle([
             ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F1F5F9")),
             ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
             ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
         ]))
-        story.append(meta_a_table)
-        story.append(Spacer(1, 8))
-
-        result_colors = {"OK": "#10B981", "NOK": "#E11D48", "SO": "#64748B"}
-        result_labels = {"OK": "OK", "NOK": "NOK", "SO": "NC"}
-
-        for section in armoire.get("sections") or []:
-            story.append(Paragraph(section.get("title", ""), style_h2))
-            if section.get("note"):
-                story.append(Paragraph(section["note"], style_caption))
-                story.append(Spacer(1, 3))
-
-            check_items = [it for it in (section.get("items") or []) if it.get("type") != "text"]
-            text_items = [it for it in (section.get("items") or []) if it.get("type") == "text"]
-
-            if check_items:
-                # Colonne "Résultat" réduite au minimum pour tenir sur "NOK"
-                # (la plus longue des 3 valeurs : OK, NOK, NC), le gain de
-                # place revient à "Point de contrôle" pour viser une seule
-                # ligne par point de contrôle. Les en-têtes passent par des
-                # Paragraph (comme le corps du tableau) pour que les plus
-                # longs ("Modification / problème constaté") se replient
-                # sur plusieurs lignes au lieu de déborder de la page.
-                label_w, result_w = 11.0 * cm, 1.1 * cm
-                comment_w = USABLE_W - label_w - result_w
-                data = [[
-                    Paragraph("Point de contrôle", style_th),
-                    Paragraph("Rés.", style_th_center),
-                    Paragraph("Modification / problème constaté", style_th),
-                ]]
-                for item in check_items:
-                    label = item.get("label", "")
-                    if item.get("reg"):
-                        label += ' <font color="#D97706">[Réglementaire]</font>'
-                    value = item.get("value", "")
-                    color = result_colors.get(value, "#94A3B8")
-                    result_text = f'<font color="{color}"><b>{result_labels.get(value, "—")}</b></font>'
-                    data.append([
-                        Paragraph(label, style_body),
-                        Paragraph(result_text, style_body_center),
-                        Paragraph(item.get("comment", "") or "", style_body),
-                    ])
-                chk_table = Table(data, colWidths=[label_w, result_w, comment_w], repeatRows=1)
-                chk_table.setStyle(TableStyle([
-                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1D4ED8")),
-                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                    ("FONTSIZE", (0, 0), (-1, -1), 9),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-                    ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                ]))
-                story.append(chk_table)
-                story.append(Spacer(1, 6))
-
-            for item in text_items:
-                story.append(Paragraph(
-                    f"<b>{item.get('label', '')} :</b> {item.get('comment', '') or '—'}", style_body,
-                ))
-                story.append(Spacer(1, 6))
-
-        notation = _compute_armoire_notation(armoire)
-        if notation["verdict"]:
-            style_pct = ParagraphStyle(
-                "RPArmoirePct", parent=styles["Normal"], alignment=TA_CENTER, fontSize=9,
-                fontName="Helvetica-Oblique", textColor=colors.HexColor("#64748B"), spaceBefore=4,
-            )
-            story.append(Paragraph(
-                f"Taux de conformité : {notation['percentage']:.0f} % "
-                f"({notation['ok']} point(s) conforme(s) sur {notation['considered']} évalué(s), NC exclus)",
-                style_pct,
-            ))
-            style_result = ParagraphStyle(
-                "RPArmoireResult", parent=styles["Normal"], alignment=TA_CENTER, fontSize=13,
-                textColor=colors.HexColor(f"#{notation['verdict_color_hex']}"), spaceBefore=2, spaceAfter=6,
-            )
-            story.append(Paragraph(notation["verdict_label"], style_result))
-            watermark_info["text"] = notation["verdict_label"]
-            watermark_info["color_hex"] = notation["verdict_color_hex"]
-
-    items = payload.get("items") or []
-    if items and not armoire:
-        story.append(Paragraph("Matériel &amp; Prestations", style_h2))
-        qte_w, pu_w, total_w = 1.6 * cm, 2.6 * cm, 2.6 * cm
-        desig_w = USABLE_W - (qte_w + pu_w + total_w)
-
-        data = [["Désignation", "Qté", "P.U. HT", "Total HT"]]
-        total_general_ht = 0.0
-        for item in items:
-            desig = str(item.get("designation", ""))
-            try:
-                qte = float(item.get("qte", 0) or 0)
-            except (TypeError, ValueError):
-                qte = 0.0
-            try:
-                pu = float(item.get("pu", 0) or 0)
-            except (TypeError, ValueError):
-                pu = 0.0
-            row_total = qte * pu
-            total_general_ht += row_total
-            data.append([desig, f"{qte:g}", f"{pu:.2f} €", f"{row_total:.2f} €"])
-        total_row_idx = len(data)
-        data.append(["TOTAL GENERAL HT", "", "", f"{total_general_ht:.2f} €"])
-
-        item_table = Table(data, colWidths=[desig_w, qte_w, pu_w, total_w], repeatRows=1)
-        item_table.setStyle(TableStyle([
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1D4ED8")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
-            ("ALIGN", (0, 0), (0, -1), "LEFT"),
-            ("FONTSIZE", (0, 0), (-1, -1), 9),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-            ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-            ("SPAN", (0, total_row_idx), (2, total_row_idx)),
-            ("FONTNAME", (0, total_row_idx), (-1, total_row_idx), "Helvetica-Bold"),
-            ("BACKGROUND", (0, total_row_idx), (-1, total_row_idx), colors.HexColor("#EFF6FF")),
-        ]))
-        story.append(item_table)
+        story.append(meta_table)
         story.append(Spacer(1, 6))
+
+        if payload.get("include_map") and (payload.get("adresse") or "").strip():
+            map_bytes = build_static_map_image(payload.get("adresse"))
+            if map_bytes:
+                story.append(Paragraph("Localisation", style_h2))
+                map_img = scaled_image(map_bytes, USABLE_W, 9 * cm)
+                map_img.hAlign = "CENTER"
+                story.append(map_img)
+                story.append(Paragraph(payload.get("adresse", ""), style_caption))
+                story.append(Spacer(1, 6))
+
+        story.append(Paragraph("Observations &amp; Travaux", style_h2))
+        story.append(Paragraph(
+            (payload.get("observations") or "").strip() or "Aucune observation particulière.",
+            style_body,
+        ))
+
+        armoire = payload.get("armoire") if payload.get("template") in ARMOIRE_TEMPLATE_IDS else None
+        if armoire:
+            story.append(Paragraph("Grille de vérification &mdash; Fiche de contrôle armoire V2024", style_h2))
+
+            meta_a = [
+                ("N° d'Affaire :", armoire.get("affaire", "")),
+                ("Identification de l'armoire :", armoire.get("identification", "")),
+                ("Plan n° :", armoire.get("plan", "")),
+                ("Indice :", armoire.get("indice", "")),
+                ("Nom du câbleur :", armoire.get("cableur", "")),
+                ("Nom du contrôleur :", armoire.get("controleur", "")),
+                ("Type de contrôle :", "Réglementaire" if armoire.get("reglementaire") else "Non réglementaire"),
+            ]
+            meta_a_data = [
+                [Paragraph(f"<b>{k}</b>", style_body), Paragraph(v or "N/C", style_body)]
+                for k, v in meta_a
+            ]
+            meta_a_table = Table(meta_a_data, colWidths=[5.5 * cm, USABLE_W - 5.5 * cm])
+            meta_a_table.setStyle(TableStyle([
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F1F5F9")),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]))
+            story.append(meta_a_table)
+            story.append(Spacer(1, 8))
+
+            result_colors = {"OK": "#10B981", "NOK": "#E11D48", "SO": "#64748B"}
+            result_labels = {"OK": "OK", "NOK": "NOK", "SO": "NC"}
+
+            for section in armoire.get("sections") or []:
+                story.append(Paragraph(section.get("title", ""), style_h2))
+                if section.get("note"):
+                    story.append(Paragraph(section["note"], style_caption))
+                    story.append(Spacer(1, 3))
+
+                check_items = [it for it in (section.get("items") or []) if it.get("type") != "text"]
+                text_items = [it for it in (section.get("items") or []) if it.get("type") == "text"]
+
+                if check_items:
+                    # Colonne "Résultat" réduite au minimum pour tenir sur "NOK"
+                    # (la plus longue des 3 valeurs : OK, NOK, NC), le gain de
+                    # place revient à "Point de contrôle" pour viser une seule
+                    # ligne par point de contrôle. Les en-têtes passent par des
+                    # Paragraph (comme le corps du tableau) pour que les plus
+                    # longs ("Modification / problème constaté") se replient
+                    # sur plusieurs lignes au lieu de déborder de la page.
+                    label_w, result_w = 11.0 * cm, 1.1 * cm
+                    comment_w = USABLE_W - label_w - result_w
+                    data = [[
+                        Paragraph("Point de contrôle", style_th),
+                        Paragraph("Rés.", style_th_center),
+                        Paragraph("Modification / problème constaté", style_th),
+                    ]]
+                    for item in check_items:
+                        label = item.get("label", "")
+                        if item.get("reg"):
+                            label += ' <font color="#D97706">[Réglementaire]</font>'
+                        value = item.get("value", "")
+                        color = result_colors.get(value, "#94A3B8")
+                        result_text = f'<font color="{color}"><b>{result_labels.get(value, "—")}</b></font>'
+                        data.append([
+                            Paragraph(label, style_body),
+                            Paragraph(result_text, style_body_center),
+                            Paragraph(item.get("comment", "") or "", style_body),
+                        ])
+                    chk_table = Table(data, colWidths=[label_w, result_w, comment_w], repeatRows=1)
+                    chk_table.setStyle(TableStyle([
+                        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1D4ED8")),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("FONTSIZE", (0, 0), (-1, -1), 9),
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ]))
+                    story.append(chk_table)
+                    story.append(Spacer(1, 6))
+
+                for item in text_items:
+                    story.append(Paragraph(
+                        f"<b>{item.get('label', '')} :</b> {item.get('comment', '') or '—'}", style_body,
+                    ))
+                    story.append(Spacer(1, 6))
+
+            notation = _compute_armoire_notation(armoire)
+            if notation["verdict"]:
+                style_pct = ParagraphStyle(
+                    "RPArmoirePct", parent=styles["Normal"], alignment=TA_CENTER, fontSize=9,
+                    fontName="Helvetica-Oblique", textColor=colors.HexColor("#64748B"), spaceBefore=4,
+                )
+                story.append(Paragraph(
+                    f"Taux de conformité : {notation['percentage']:.0f} % "
+                    f"({notation['ok']} point(s) conforme(s) sur {notation['considered']} évalué(s), NC exclus)",
+                    style_pct,
+                ))
+                style_result = ParagraphStyle(
+                    "RPArmoireResult", parent=styles["Normal"], alignment=TA_CENTER, fontSize=13,
+                    textColor=colors.HexColor(f"#{notation['verdict_color_hex']}"), spaceBefore=2, spaceAfter=6,
+                )
+                story.append(Paragraph(notation["verdict_label"], style_result))
+                watermark_info["text"] = notation["verdict_label"]
+                watermark_info["color_hex"] = notation["verdict_color_hex"]
+
+        items = payload.get("items") or []
+        if items and not armoire:
+            story.append(Paragraph("Matériel &amp; Prestations", style_h2))
+            qte_w, pu_w, total_w = 1.6 * cm, 2.6 * cm, 2.6 * cm
+            desig_w = USABLE_W - (qte_w + pu_w + total_w)
+
+            data = [["Désignation", "Qté", "P.U. HT", "Total HT"]]
+            total_general_ht = 0.0
+            for item in items:
+                desig = str(item.get("designation", ""))
+                try:
+                    qte = float(item.get("qte", 0) or 0)
+                except (TypeError, ValueError):
+                    qte = 0.0
+                try:
+                    pu = float(item.get("pu", 0) or 0)
+                except (TypeError, ValueError):
+                    pu = 0.0
+                row_total = qte * pu
+                total_general_ht += row_total
+                data.append([desig, f"{qte:g}", f"{pu:.2f} €", f"{row_total:.2f} €"])
+            total_row_idx = len(data)
+            data.append(["TOTAL GENERAL HT", "", "", f"{total_general_ht:.2f} €"])
+
+            item_table = Table(data, colWidths=[desig_w, qte_w, pu_w, total_w], repeatRows=1)
+            item_table.setStyle(TableStyle([
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1D4ED8")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+                ("ALIGN", (0, 0), (0, -1), "LEFT"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("SPAN", (0, total_row_idx), (2, total_row_idx)),
+                ("FONTNAME", (0, total_row_idx), (-1, total_row_idx), "Helvetica-Bold"),
+                ("BACKGROUND", (0, total_row_idx), (-1, total_row_idx), colors.HexColor("#EFF6FF")),
+            ]))
+            story.append(item_table)
+            story.append(Spacer(1, 6))
 
     content = payload.get("content") or []
     if content:
